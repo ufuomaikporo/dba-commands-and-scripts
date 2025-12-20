@@ -1,0 +1,32 @@
+USE TEMPDB
+
+-- View current size of tempdb files
+DECLARE tempfile_cursor CURSOR FOR
+SELECT 
+name
+FROM sys.master_files
+WHERE DB_NAME(database_id) = 'tempdb'
+ORDER BY type_desc DESC, file_id 
+GO
+
+-- Shrink a single tempdb file
+DECLARE @filename VARCHAR(50)
+
+OPEN tempfile_cursor  
+FETCH NEXT FROM tempfile_cursor INTO @filename  
+
+WHILE @@FETCH_STATUS = 0  
+BEGIN
+	EXEC ('CHECKPOINT
+
+	DBCC FREEPROCCACHE
+	
+	DBCC SHRINKFILE (' + @filename + ', 1024)
+	')
+
+	FETCH NEXT FROM tempfile_cursor INTO @filename ;
+	
+END
+
+CLOSE tempfile_cursor  
+DEALLOCATE tempfile_cursor 

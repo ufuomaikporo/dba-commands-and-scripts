@@ -1,0 +1,355 @@
+#############################################################################################################
+DYNAMIC SQL
+#############################################################################################################
+
+https://learn.microsoft.com/en-us/sql/relational-databases/security/sql-injection?view=sql-server-ver16
+
+. 
+
+TIPS
+1. Avoid the use of dynamic SQL commands in applications, and restrict the permissions on users with access to dynamic SQL commands.
+	Constructing queries to execute via EXECUTE can create vulnerabilities to websites and applications via SQL Injection attacks
+2. wrap database names, table names, and column names with QUOTENAME() function to prevent sql injection when
+   using them as variables in dynamic queries 
+3. Must convert variables of numeric datatype to nvarchar to use them as inputs in a dynamic query
+4. When performance is a concern, test remote queries:
+	i. Ensure that as much logic as possible is executed on the remote server
+	ii. Verify indexes on the remote server index tables appropriately to support the query
+	iii. Be aware that the use of remote queries in a codebase complicates database code version control and maintenance 
+	    of development and test environments
+5. Use VARCHAR for variables being used inside of a dynamic query that is assigned to an NVARCHAR variable (VARCHAR takes up less space than NVARCHAR)
+
+For Example
+
+DECLARE @Name VARCHAR(100)
+DECLARE @SQL NVARCHAR(MAX)
+
+SET @SQL = 'SELECT * FROM sys.tables WHERE name = ' + @Name
+
+EXECUTE (@SQL)
+
+-- Format a string that contains a list of items into a comma-separated list of items in quotes
+
+DECLARE @List NVARCHAR(MAX)
+
+SET @List = 'item1
+item2
+item3'
+
+SET @list = '''' + @List + ''''
+SELECT @List = REPLACE(@List, CHAR(13), ''',')
+SELECT @List = REPLACE(@List, CHAR(10), '''')
+
+---------------------------- INSERT INTO scalar variable ----------------
+
+-- output to single variable
+DECLARE @Table VARCHAR(100)
+DECLARE @SQL NVARCHAR(MAX)
+
+SET @SQL = 'SELECT TOP 1 @TableOUT = table_name
+FROM INFORMATION_SCHEMA.columns'
+ 
+EXECUTE sp_executesql @SQL, N'@TableOUT VARCHAR(100) OUTPUT', @TableOUT = @Table OUTPUT
+
+SELECT @Table
+
+
+-- output to multiple variables 
+DECLARE @Table VARCHAR(100)
+DECLARE @Column VARCHAR(100)
+DECLARE @SQL NVARCHAR(MAX)
+
+SET @SQL = 'SELECT TOP 1 @TableOUT = table_name, @ColumnOUT = column_name 
+FROM INFORMATION_SCHEMA.columns'
+ 
+EXECUTE sp_executesql @SQL, N'@TableOUT VARCHAR(100) OUTPUT, @columnOUT VARCHAR(100) OUTPUT', @TableOUT = @Table OUTPUT, @ColumnOUT = @Column OUTPUT
+
+SELECT @Table, @Column
+
+
+-- Turn column 'trigger_id' returned from query result into a comma-seperated quoted-list-string (for string literals) 
+https://stackoverflow.com/questions/16193152/sql-server-convert-select-a-column-and-convert-it-to-a-string
+
+-- list without quotes
+DECLARE @trigger_id_list NVARCHAR(100) = NULL
+SELECT @trigger_id_list = COALESCE(@trigger_id_list + ', ', '') + CONVERT(VARCHAR(100), trigger_id) 
+FROM #TriggerList_tbl
+
+-- list with items in quotes
+DECLARE @search_string_list NVARCHAR(MAX) = NULL
+SELECT @search_string_list = COALESCE(@search_string_list + ', ''', '''') + CONVERT(VARCHAR(100), newString) + ''''
+FROM @SearchnReplace_tbl
+
+-- This is the dynamic SQL version. The same thing can be achieved for T-SQL with a few minor alterations 
+NOTE*** With dynamic SQL the variables within the query have to be initialized before the SET statement
+
+DECLARE @search_string AS VARCHAR(70)
+DECLARE @table_name AS VARCHAR(150)
+DECLARE @GetColumnCount AS NVARCHAR(1000)
+DECLARE @count AS INT
+SET @search_string = 'Create%User%'
+set @table_name = 'INCIDENT'
+DECLARE @GetDefaultConstraint NVARCHAR(1000)
+SET @count = 2
+DECLARE @drop_column_list NVARCHAR(200)
+
+SET @GetDefaultConstraint = 'SELECT @result = COALESCE(@result + '', '''''', '''''''') + CONVERT(varchar(12), column_name) + ''''''''
+FROM 
+(SELECT TOP 3 tab.name AS table_name,
+      col.name AS column_name,
+	  con.name AS constraint_name
+FROM sys.tables tab
+INNER JOIN sys.columns col 
+ON tab.object_id = col.object_id
+LEFT JOIN sys.default_constraints con
+ON con.parent_column_id = col.column_idF
+WHERE col.name LIKE ' + '''' + @search_string + '''' +
+' AND tab.name = ' + '''' + @table_name + '''' + 
+' ORDER BY 3 DESC) subq;'
+
+EXECUTE sp_executesql @GetDefaultConstraint, N'@result NVARCHAR(100) OUTPUT', @drop_column_list OUTPUT
+EXECUTE sp_executesql @GetDefaultConstraint, N'@result NVARCHAR(100) OUTPUT', @result = @drop_column_list OUTPUT (ALTERNATIVE METHOD)
+
+SELECT @drop_column_list
+
+-- GetDefaultConstraint MUST BE NVARCHAR
+
+-------------------------------Turns column of query result into a string list---------------------------
+
+--Turns column of query result into a string list (for numbers)
+- This is a dynamic SQL version. The same thing can be achieved for regular T-SQL
+-- The variable used in the Dynamic SQL statement is declared in the EXECUTE statement
+
+DECLARE @search_string AS VARCHAR(70)
+DECLARE @table_name AS VARCHAR(150)
+DECLARE @GetColumnCount AS NVARCHAR(1000)
+DECLARE @count AS INT
+SET @search_string = 'Create%User%'
+set @table_name = 'INCIDENT'
+DECLARE @GetDefaultConstraint NVARCHAR(1000)
+SET @count = 2
+DECLARE @drop_column_list NVARCHAR(200)
+
+SET @GetDefaultConstraint = 'SELECT @result = COALESCE(@result + '', '', '''') + CONVERT(varchar(12), column_id) 
+FROM 
+(SELECT TOP 3 tab.name AS table_name,
+      col.column_id,
+      col.name AS column_name,
+	  con.name AS constraint_name
+FROM sys.tables tab
+INNER JOIN sys.columns col 
+ON tab.object_id = col.object_id
+LEFT JOIN sys.default_constraints con
+ON con.parent_column_id = col.column_id
+WHERE col.name LIKE ' + '''' + @search_string + '''' +
+' AND tab.name = ' + '''' + @table_name + '''' + 
+' ORDER BY 3 DESC) subq;'
+
+EXECUTE sp_executesql @GetDefaultConstraint, N'@result NVARCHAR(100) out', @drop_column_list out
+SELECT @drop_column_list
+
+-- GetDefaultConstraint MUST BE NVARCHAR
+
+#######################	Insert into a table variable using Dynaimic SQL###################################
+
+-- Use temporary tables to store the results of a multi-row and/or multi-column dynamic sql query 
+
+-- Use QUOTENAME function to wrap string literals and prevent sql injection. This might only work for variables
+  that are arguments to a function
+-- The table used in the Dynamic SQL statement is declared inside the Dynamic SQL statement
+
+DECLARE @search_string AS VARCHAR(70)
+DECLARE @table_name AS VARCHAR(150)
+SET @search_string = 'Create%User%'
+set @table_name = 'VALVE'
+DECLARE @constraint_name NVARCHAR(200)
+DECLARE @GetDefaultConstraints NVARCHAR(500)
+DECLARE @DefaultConstrList TABLE (id INT IDENTITY(1,1) PRIMARY KEY CLUSTERED, cons_name NVARCHAR(100))
+
+SET @GetDefaultConstraints = 'DECLARE @result TABLE (cons_name NVARCHAR(100))
+INSERT INTO @result SELECT cons.name 
+FROM sys.default_constraints cons
+WHERE parent_object_id = OBJECT_ID(N' + '''' + QUOTENAME(@table_name) + '''' + ')
+AND parent_column_id IN (SELECT column_id FROM sys.columns col
+                        WHERE col.name LIKE (' + @column_drop_list + ')
+                        AND object_id = OBJECT_ID(N' + '''' + QUOTENAME(@table_name) + ''''+ '));
+						
+SELECT * FROM @result'
+
+INSERT INTO @DefaultConstrList					
+EXECUTE (@GetDefaultConstraints)
+
+select * from @DefaultConstrList
+ 
+--IF @ConstraintName IS NOT NULL
+--EXECUTE ('ALTER TABLE INCIDENT DROP CONSTRAINT ' + @ConstraintName)
+
+#######################################################################################################
+# CURSOR
+#######################################################################################################
+
+DECLARE db_cursor CURSOR FOR 
+SELECT name 
+FROM MASTER.dbo.sysdatabases 
+WHERE name NOT IN ('master','model','msdb','tempdb') 
+
+OPEN db_cursor  
+FETCH NEXT FROM db_cursor INTO @name  
+
+WHILE @@FETCH_STATUS = 0  
+BEGIN  
+      SET @fileName = @path + @name + '_' + @fileDate + '.BAK' 
+      BACKUP DATABASE @name TO DISK = @fileName 
+
+      FETCH NEXT FROM db_cursor INTO @name 
+END 
+
+CLOSE db_cursor  
+DEALLOCATE db_cursor 
+
+###########################################################################################################
+# ERROR HANDLING
+###########################################################################################################
+
+RAISEERROR is another error handling function that can be used. But Microsoft recommends using THROW instead
+
+https://stackoverflow.com/questions/24141845/throw-vs-raiserror
+
+----------------------------------------- THROW error ---------------------------------------
+
+https://learn.microsoft.com/en-us/sql/t-sql/language-elements/throw-transact-sql?view=sql-server-ver16
+
+-- You can use it in a try catch block. It will stop the script and output an error message if the code in the try block causes an error
+
+BEGIN TRY
+	EXECUTE (@SQL)
+END TRY
+BEGIN CATCH
+	PRINT @SQL;
+	THROW
+END CATCH
+
+-- You can customize the error message as follows
+
+BEGIN TRY
+	SET @SQL = 'select 1 from TEST'
+	SET @Endmessage = 'Try Again'
+	EXECUTE (@SQL)
+END TRY
+BEGIN CATCH
+	PRINT @SQL;
+	THROW 51000, 'This is my error message' + CHAR(10) + @Endmessage, 1
+END CATCH
+
+---------------------------------------- RAISERROR -------------------------------------
+
+IF 1=1
+BEGIN
+	SET @FKColumnName = 'Column'
+	SET @FKTableName = 'TableName'
+	RAISERROR('There are duplicate DomainCatalogIds in the ListDomain table for the ''%s'' column of the ''%s'' table. You must manually fix the issue before re-running the script', 11, 0, @FKColumnName, @FKTableName)
+END 
+
+--------------------------------------- ERROR_MESSAGE() ---------------------------------------
+
+- You can use the ERROR_MESSAGE() function to get the error message generated by SQL Server to store it in a variable or print to screen 
+
+-------------------------- Using Extended Events to Capture errors in variables/tables  ---
+
+DECLARE @SQL NVARCHAR(MAX)
+
+-- Create and start an Extended Events Session
+SET @SQL = 'IF NOT EXISTS (SELECT * FROM sys.server_event_sessions WHERE name =  ''Error Handling Session(' + CAST(@@SPID AS NVARCHAR) + ')'')
+		BEGIN
+			CREATE EVENT SESSION [Error Handling Session(' + CAST(@@SPID AS NVARCHAR) + ')]
+			ON SERVER 
+			ADD EVENT sqlserver.error_reported
+			(
+				ACTION(
+					sqlserver.session_id,
+					sqlserver.sql_text
+				)
+				WHERE [package0].[not_equal_unicode_string]([message],N'''''''''''') 
+				AND [severity]>(10) 
+				AND [sqlserver].[session_id]=' + CAST(@@SPID AS NVARCHAR) + '
+			) 
+			ADD TARGET package0.ring_buffer
+			WITH (
+				--ALLOW_SINGLE_EVENT_LOSS
+				--NO_EVENT_LOSS
+				EVENT_RETENTION_MODE=ALLOW_SINGLE_EVENT_LOSS,
+
+				MAX_MEMORY=4096 KB,
+				MAX_DISPATCH_LATENCY=1 SECONDS,
+				MAX_EVENT_SIZE=0 KB,
+				MEMORY_PARTITION_MODE=NONE,
+				TRACK_CAUSALITY=ON,
+				STARTUP_STATE=OFF
+			)
+			ALTER EVENT SESSION [Error Handling Session(' + CAST(@@SPID AS NVARCHAR) + ')] ON SERVER STATE=START;
+		END'
+
+EXECUTE (@SQL)
+
+BEGIN TRY
+	BACKUP DATABASE master
+    TO DISK = 'master.diff.bak'
+    WITH DIFFERENTIAL;
+END TRY
+BEGIN CATCH
+	SET @SQL = 'DECLARE @XEData XML
+
+				SELECT @XEData = CAST(xet.target_data AS XML)
+				FROM sys.dm_xe_session_targets AS xet
+				JOIN sys.dm_xe_sessions AS xe
+					ON (xe.address = xet.event_session_address)
+				WHERE xe.name = ''Error Handling Session(' + CAST(@@SPID AS NVARCHAR) + ')'';
+
+				/*
+				Check value of "totalEventsProcessed" to ensure events have been 
+				dispatched to event session target (ring_buffer).
+				If no events have been processed, delay for a period of MAX_DISPATCH_LATENCY +1 (in seconds).
+				*/
+				IF @XEData.value(''(/RingBufferTarget/@totalEventsProcessed)[1]'', ''INT'') = 0
+				BEGIN
+					WAITFOR DELAY ''00:00:02'';
+
+					SELECT @XEData = CAST(xet.target_data AS XML)
+					FROM sys.dm_xe_session_targets AS xet
+					JOIN sys.dm_xe_sessions AS xe
+						ON (xe.address = xet.event_session_address)
+					WHERE xe.name = ''Error Handling Session(' + CAST(@@SPID AS NVARCHAR) + ')'';
+				END
+
+				-- Store Errors in a table
+				SELECT 
+					x.c.value(N''(@name)[1]'', N''NVARCHAR(MAX)'') AS EventName,
+					x.c.value(N''(@timestamp)[1]'', N''datetime'') AS EventTime,
+					x.c.value(N''(data[@name="error_number"]/value)[1]'', N''NVARCHAR(MAX)'') AS ErrorNumber,
+					x.c.value(N''(data[@name="severity"]/value)[1]'', N''NVARCHAR(MAX)'') AS Severity,
+					x.c.value(N''(data[@name="state"]/value)[1]'', N''NVARCHAR(MAX)'') AS [State],
+					x.c.value(N''(data[@name="user_defined"]/value)[1]'', N''NVARCHAR(MAX)'') AS UserDefined,
+					x.c.value(N''(data[@name="category"]/text)[1]'', N''NVARCHAR(MAX)'') AS Category,
+					x.c.value(N''(data[@name="destination"]/text)[1]'', N''NVARCHAR(MAX)'') AS Destination,
+					x.c.value(N''(data[@name="is_intercepted"]/value)[1]'', N''NVARCHAR(MAX)'') AS IsIntercepted,
+					x.c.value(N''(data[@name="message"]/value)[1]'', N''NVARCHAR(MAX)'') AS [Message],
+					x.c.value(N''(action[@name="sql_text"]/value)[1]'', N''NVARCHAR(MAX)'') AS SqlText,
+					x.c.value(N''(action[@name="session_id"]/value)[1]'', N''NVARCHAR(MAX)'') AS SessionId
+				INTO ##ErrorTable
+				FROM @XEData.nodes(''//RingBufferTarget/event'') AS x(c)
+				WHERE x.c.value(N''(data[@name="destination"]/text)[1]'', N''NVARCHAR(MAX)'') = ''USER''
+				
+				-- Store the error in s variable 
+				SELECT @ErrMsg =  COALESCE(@ErrMsg + CHAR(10), '''') + x.c.value(N''(data[@name="message"]/value)[1]'', N''NVARCHAR(MAX)'')   
+				FROM @XEData.nodes(''//RingBufferTarget/event'') AS x(c)
+				WHERE x.c.value(N''(data[@name="destination"]/text)[1]'', N''NVARCHAR(MAX)'') = ''USER'''
+
+
+END CATCH
+
+
+-- STOP and DROP extended events session
+SET @SQL = 'ALTER EVENT SESSION [Error Handling Session(' + CAST(@@SPID AS NVARCHAR) + ')] ON SERVER STATE=STOP;
+			DROP EVENT SESSION [Error Handling Session(' + CAST(@@SPID AS NVARCHAR) + ')] ON SERVER;'
+
+EXECUTE(@SQL);

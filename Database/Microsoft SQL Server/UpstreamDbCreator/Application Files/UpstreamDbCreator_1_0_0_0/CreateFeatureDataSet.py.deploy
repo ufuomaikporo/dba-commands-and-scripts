@@ -1,0 +1,56 @@
+# Name: CreateFeatureDataSet.py
+# Description: Create the feature Dataset
+
+# Import system modules
+import arcpy
+import getopt
+import os
+import sys
+import time
+import logging
+
+def main(argv):
+    HELP = 'CreateFeatureDataSet.py -f <featureDataSet> -l <logFileName> -t <tmpFolder>'
+    DEFAULT = '#'
+
+    tmpFolder = r'C:\Temp'
+    SDEFilename = r'SDEFile.sde'
+    featureDataSet = ''
+
+    startTime = time.time()
+
+    try:
+        opts, args = getopt.getopt(argv, "hf:l:t:", ["featureDataSet=", "logFileName=", "tmpFolder="])
+    except getopt.GetoptError:
+        print(HELP)
+        sys.exit(2)
+
+    for opt, arg in opts:
+        if opt == '-h':
+            print(HELP)
+            sys.exit()
+        elif opt in ("-f", "--featureDataSet"):
+            featureDataSet = arg
+        elif opt in ("-l", "--logFileName"):
+            logFileName = arg
+        elif opt in ("-t", "--tmpFolder"):
+            tmpFolder = arg
+
+    FORMAT = '%(asctime)s - %(message)s'
+    logging.basicConfig(filename=logFileName, level=logging.INFO, format=FORMAT)
+    logging.info('Started to run ' + __file__)
+    logging.info('Parameter "featureDataSet" = ' + featureDataSet)
+    logging.info('Parameter "logFileName" = ' + logFileName)
+    logging.info('Parameter "tmpFolder" = ' + tmpFolder)
+
+    arcpy.env.workspace = os.path.join(tmpFolder, SDEFilename)
+    spatialRef = arcpy.SpatialReference(4326)
+    arcpy.management.CreateFeatureDataset(os.path.join(tmpFolder, SDEFilename), featureDataSet, spatialRef)
+    logging.info('Created ' + featureDataSet + ' feature data set.')
+
+    TimeElapes = time.time() - startTime
+
+    logging.info('End to run ' + __file__ + ' with elapsed time of ' + str(TimeElapes) + 'seconds')
+
+if __name__ == "__main__":
+    main(sys.argv[1:])    

@@ -1,0 +1,155 @@
+
+-- SPACES matter in your script. an inappropriate space in the wrong place
+   or a missing space can cause an error in your script
+
+----------------------File Permissions------------------------
+
+--Script file must be executable
+
+sudo chmod +x script_name.sh
+
+-- Or the script can be lauched using the "sh" command or "bash" command
+
+sh script_name.sh
+
+-- Specify the Command Line Interpreter (CLI) that the script will use to run it's 
+   commands at the top of the script. The following example specifies that the 
+   script will be run using the bash shell command line interpreter (only commands
+   that work in the bash shell will work in the script)
+
+#!/bin/bash
+
+-- To view the available CLI environments 
+
+cat /etc/shells
+
+----------------------------Variables-----------------------------
+
+-- Use capital letters for the names of variables. There should be no white spaces
+   Use the '${}' symbol to call the variable. Using the curly braces ensures there
+   is no confusing when combining variables
+
+SUBJECT=Linux
+
+-- Use 'echo' within a script to print a line of text to screen
+
+echo "My favourite subject is ${SUBJECT}"
+
+-- To store the output of a shell command in a variable or execute a command within
+   the echo command, use the following
+
+CURRENT_DIR=`pwd`
+
+OR
+
+CURRENT_DIR=$(pwd)
+
+--------------------------Special Variables---------------------------
+
+-- name of the script/process that is running : $0
+-- number of arguments that were passed to the code: $#
+-- exit code of the previous shell command: $?
+-- Process ID (PID) of the process running the script (changes each time the script
+   is ran): $$
+-- arguments that have been passed to the script/program in the order that they
+   were passed: $1, $2 
+-- Pass all arguments as a single word with seperated by a space: $*
+-- Pass each argument as a seperate word: $@
+-- login shell: $SHELL
+-- current terminal setting: $TERM
+-- $PATH is a varaible that stores a list of directory paths that are checked by
+   default whenever a command or script is ran. If a command or script exists in 
+   the list, then it's full path does not need to be specified. You can add paths
+   to the list by setting the following in the .bash_profile or in a script
+
+export $PATH=$PATH:directory_to_be_added
+
+#!/bin/bash
+ls
+echo "$0 $# $? $$ $1 $2"
+
+-- use ". " to set a variable or run a script in the current session/shell.
+  "./testscript.sh" spawns a different shell to run the script ". ./testscript.sh"
+   runs the script in the current shell. The same applies with ". oraenv" 
+
+---------------------User interaction-------------------------
+
+-- Use keyword 'read' to prompt user input 
+
+#!/bin/bash
+echo "What country are you in?"
+read COUNTRY
+echo "Hello, $COUNTRY!"
+
+---------------------Control Flow------------------------------
+
+-- '-gt' is greater than, '-lt' is less than, '-eq' is equals, '-le' is
+   less than or equal, '-ge' is greater than or equal
+
+-- simple if block
+
+#!/bin/bash
+if [ $# -gt 0 ]; 
+then
+   echo "the first argument is $l"
+fi
+
+-- if-else block
+
+#!/bin/bash
+if [ $# -gt 0 ]; 
+then
+   echo "the first argument is $l"
+else
+   echo " "
+fi
+
+-- An if-elif-else block
+
+#!/bin/bash
+
+if [ $# -gt 1 ]; then
+   echo "Can't have more than 1 argument" 
+   exit 1
+elif [ $# -eq 0 ]; then
+   echo "Must have one argument"
+   exit 1
+else
+   echo "$1"
+fi
+
+-- Case block (for testing various values of equality). The last criteria
+   *) functions like an else in an if-else_if-else block
+
+case "$1" in
+Night)
+    echo "Day"
+    ;;
+Day)
+    echo "Night"
+    ;;
+NAIT)
+    echo "SAIT"
+    ;;
+*)
+    echo "Hello World!"
+    ;;
+esac
+
+----------------------------Loops---------------------------------
+
+
+---------------------Errors and Exiting---------------------------
+
+-- The exit status for a script is either a '0' for ok or a >=1 for an error
+-- you can use '&&' ('and' operator) and '||' ('or' operator) to create
+  alternative outputs based on exit status
+
+-- The following command will either execute the script AND displays "success"
+  for a exit status of 0 or execute the script and display "failure" for an
+  exit status of 1. 
+
+./hello.sh && echo "success" || echo "failure"
+
+-- Force your script to exit with either an error or success status
+   placing 'exit 0' to exit with success or 'exit 1' to exit with failure

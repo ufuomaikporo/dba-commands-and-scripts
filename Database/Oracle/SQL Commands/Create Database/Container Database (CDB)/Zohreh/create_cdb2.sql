@@ -1,0 +1,26 @@
+CREATE DATABASE CDB2
+MAXINSTANCES 1
+MAXLOGHISTORY 1
+MAXLOGFILES 16
+MAXLOGMEMBERS 3
+MAXDATAFILES 1024
+DATAFILE 'C:\CDB2\oradata\system01.dbf' SIZE 700M REUSE
+  AUTOEXTEND ON NEXT  10240K MAXSIZE UNLIMITED
+  EXTENT MANAGEMENT LOCAL
+SYSAUX DATAFILE 'C:\CDB2\oradata\sysaux01.dbf' SIZE 550M REUSE
+  AUTOEXTEND ON NEXT  10240K MAXSIZE UNLIMITED
+SMALLFILE DEFAULT TEMPORARY TABLESPACE TEMP TEMPFILE 'C:\CDB2\oradata\temp01.dbf' SIZE 20M REUSE
+  AUTOEXTEND ON NEXT  640K MAXSIZE UNLIMITED
+SMALLFILE UNDO TABLESPACE "UNDOTBS1" DATAFILE  'C:\CDB2\oradata\undotbs01.dbf' SIZE 200M REUSE
+  AUTOEXTEND ON NEXT  5120K MAXSIZE UNLIMITED
+CHARACTER SET AL32UTF8
+NATIONAL CHARACTER SET AL16UTF16
+LOGFILE GROUP 1 ('C:\CDB2\oradata\redo01.log') SIZE 50M,
+        GROUP 2 ('C:\CDB2\oradata\redo02.log') SIZE 50M,
+        GROUP 3 ('C:\CDB2\oradata\redo03.log') SIZE 50M
+USER SYS IDENTIFIED BY Or5cle#123 USER SYSTEM IDENTIFIED BY Or5cle#123
+enable pluggable database
+seed file_name_convert=('C:\CDB2\oradata\system01.dbf','C:\CDB2\oradata\pdbseed\system01.dbf',
+                        'C:\CDB2\oradata\sysaux01.dbf','C:\CDB2\oradata\pdbseed\sysaux01.dbf',
+                        'C:\CDB2\oradata\temp01.dbf','C:\CDB2\oradata\pdbseed\temp01.dbf',
+                        'C:\CDB2\oradata\undotbs01.dbf','C:\CDB2\oradata\pdbseed\undotbs01.dbf');

@@ -1,0 +1,69 @@
+##############################################################################
+# Copyright (c) 1991, 2013 by Oracle Corporation
+##############################################################################
+ 
+###########################################
+# Cache and I/O
+###########################################
+db_block_size=8192
+ 
+###########################################
+# Cursors and Library Cache
+###########################################
+open_cursors=300
+ 
+###########################################
+# Database Identification
+###########################################
+db_name="COCDB"
+ 
+###########################################
+# File Configuration
+###########################################
+control_files=("C:\app\Oracle\oradata\COCDB\CONTROL01.CTL", 
+               "D:\app\Oracle\oradata\COCDB\CONTROL02.CTL",
+               "E:\app\Oracle\oradata\COCDB\CONTROL03.CTL")
+db_recovery_file_dest="H:\app\Oracle\recovery_area"
+db_recovery_file_dest_size=20G
+
+###########################################
+# Miscellaneous
+###########################################
+compatible=12.2.0
+diagnostic_dest=C:\app\Oracle
+enable_pluggable_database=true
+memory_target=819M
+ 
+###########################################
+# NLS
+###########################################
+nls_language="AMERICAN"
+nls_territory="AMERICA"
+ 
+###########################################
+# Network Registration
+###########################################
+local_listener=LISTENER_COCDB
+ 
+###########################################
+# Processes and Sessions
+###########################################
+processes=300
+ 
+###########################################
+# Security and Auditing
+###########################################
+audit_file_dest="H:\app\Oracle\recovery_area"
+audit_trail=db
+remote_login_passwordfile=EXCLUSIVE
+ 
+###########################################
+# Shared Server
+###########################################
+dispatchers="(PROTOCOL=TCP) (SERVICE=COCXDB)"
+ 
+###########################################
+# System Managed Undo and Rollback Segments
+###########################################
+undo_tablespace=UNDOTBS1
+ 

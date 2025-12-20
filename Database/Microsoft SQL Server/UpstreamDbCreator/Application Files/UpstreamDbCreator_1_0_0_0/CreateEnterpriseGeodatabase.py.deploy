@@ -1,0 +1,26 @@
+#Import arcpy module
+import arcpy, getopt, sys, datetime
+
+
+#argments order should be "server name", "database name", "sa password", "key Code File"
+
+serverName = str(sys.argv[1])
+databaseName = str(sys.argv[2])
+saPassword = str(sys.argv[3])
+keyCodeFile = str(sys.argv[4])
+logFileName = str(sys.argv[5])
+
+print("Creating Enterprise Geodatabase: " + databaseName + " @ " + serverName)
+
+#Create the log file and start to log the process
+logFile = open(logFileName, 'a+')
+logFile.write(datetime.datetime.now().ctime() + "\t")
+logFile.write("Creating Enterprise Geodatabase: " + databaseName + " @ " + serverName + "\n")
+
+arcpy.CreateEnterpriseGeodatabase_management("SQL_SERVER", serverName, databaseName , "OPERATING_SYSTEM_AUTH", "sa", saPassword, "DBO_SCHEMA", "dbo", saPassword, 
+                                             "", keyCodeFile)
+
+#Logging the completion of the process and close the file
+logFile.write(datetime.datetime.now().ctime() + "\t")
+logFile.write("Finished to create Enterprise Geodatabase: " + databaseName + " @ " + serverName + "\n")
+logFile.close()

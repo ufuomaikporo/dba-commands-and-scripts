@@ -1,0 +1,34 @@
+##################################################################################
+# DOWNGRADE DATABASE
+##################################################################################
+
+NOTE** It's quicker and easier (takes up less disk space) to export data in SQL Server
+using the Export tool rather than scripting the data
+
+STEP 1: Open 'Generate Script' wizard in SQL Server
+
+STEP 2: Click on the 'Advanced' Options and
+
+GENERAL OPTIONS
+- Choose 'schema only' for 'types of data to script'
+- Set the 'Script for Server version' to the database verison of your choice
+- Set 'Script Defaults' to 'true'
+- Optionally you can set it to copy the collation 
+
+TABLE/VIEW OPTIONS
+- SET the following options to 'true'
+	- Script Check Constraints
+	- Script foreign Keys
+	= Script Indexes
+	= Script Primary Keys
+	- Script Triggers
+	- Script Unique Keys
+	
+STEP 3: Generate and run the script to Create the database and database objects
+
+STEP 4: Disable foreign keys and nonclustered indexes
+
+STEP 5: Load the tables (only) using the SQL Server 'Export Data' Wizard. This will complete with errors
+since no data validation was done. You can compare the size of the source db and the target db to see if the amount of data is similar
+
+STEP 6: Enable the foreign keys and Nonclustered indexes

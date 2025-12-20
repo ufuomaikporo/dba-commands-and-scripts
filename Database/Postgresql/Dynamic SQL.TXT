@@ -1,0 +1,64 @@
+---------------------------- Install dblink if not already present
+
+CREATE EXTENSION IF NOT EXISTS dblink; 
+
+--------------------------------------- Using a connection string
+
+SELECT dblink_exec('host=localhost dbname=otherdb user=postgres password=secret', 'UPDATE mytable SET col = 1');
+
+------------------------- Using a named connection
+
+SELECT dblink_connect('myconn', 'host=localhost dbname=otherdb user=postgres password=secret');
+SELECT dblink_exec('myconn', 'DELETE FROM mytable WHERE id = 5', false);
+
+----------------------------- Create the IRASInsightHubWeb database if it does not already exist
+
+DO $$
+DECLARE
+	sql_text TEXT;
+BEGIN
+	sql_text := 'CREATE DATABASE "IRASInsightHubWeb_TEST"
+					    WITH
+					    OWNER = pgadmin
+					    ENCODING = ''UTF8''
+					    LC_COLLATE = ''en_US.utf8''
+					    LC_CTYPE = ''en_US.utf8''
+					    LOCALE_PROVIDER = ''libc''
+					    TABLESPACE = pg_default
+					    CONNECTION LIMIT = -1
+						TEMPLATE = template0
+					    IS_TEMPLATE = False;';
+						
+    IF NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'IRASInsightHubWeb_TEST') THEN
+        PERFORM dblink_exec('dbname=postgres user=' || current_user || '', sql_text);
+    END IF;
+END
+$$;
+
+--------------------------- Use current user context to create a "reporting" schema if it does not already exist
+DO $$
+BEGIN
+	PERFORM dblink_exec('dbname=IRASInsightHubWeb_TEST user=' || current_user || '', 'CREATE SCHEMA IF NOT EXISTS reporting');
+END
+$$;
+
+
+-- List all foreign keys in the current PostgreSQL database
+SELECT
+    tc.constraint_name,
+    tc.table_schema,
+    tc.table_name,
+    kcu.column_name,
+    ccu.table_schema AS foreign_table_schema,
+    ccu.table_name AS foreign_table_name,
+    ccu.column_name AS foreign_column_name
+FROM
+    information_schema.table_constraints AS tc
+    JOIN information_schema.key_column_usage AS kcu
+      ON tc.constraint_name = kcu.constraint_name
+      AND tc.table_schema = kcu.table_schema
+    JOIN information_schema.constraint_column_usage AS ccu
+      ON ccu.constraint_name = tc.constraint_name
+      AND ccu.table_schema = tc.table_schema
+WHERE tc.constraint_type = 'FOREIGN KEY'
+ORDER BY tc.table_schema, tc.table_name, tc.constraint_name;

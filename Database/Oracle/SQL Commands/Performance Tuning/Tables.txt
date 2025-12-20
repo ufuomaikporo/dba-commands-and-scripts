@@ -1,0 +1,228 @@
+###########################################################################
+Storage Control
+###########################################################################
+
+-- Storage control starts with settings on a tablespace
+-- Storage control controls how blocks are marked as used or available
+-- There are two choices (Dictionary, Local)
+
+############################################################################
+Dictionary Managed
+############################################################################
+
+-- Original method of controlling how blocks are marked as used or available
+-- information is stored in the data dictionary in tables
+-- Sytem Tablespace MUST be dictionary managed to create dictionary managed
+   tablespaces
+-- Oracle recommends Locally managed tablespaces (Dictionary managed 
+   tablespaces provided for backwards compatability)
+
+Disadvantages:
+
+-- Lots of dictionary entries (each block's usage status is recorded)
+-- contention (waits) against the data dictionary during updates
+
+DEFAULT STORAGE (clauses):
+
+INITIAL: The initial amount of space allocated to the object (in K,M or G)
+NEXT: space allocations for subsequent extents (specify K,M or G)
+PCTINCREASE: How much third and subsequent extent allocations should be
+   for example if PCTINCREASE 50, INITIAL 100K, NEXT 200K then the extent
+    allocation will be as follows 100K, 200K, 300K, 450 675K
+MINEXTENTS: number of allocated extents when an object is initially created.
+            Minimum is 1
+MAXEXTENTS: maximum number of extents allowed for an object. Maximum is UNLIMITED
+MAXSIZE: Controls how large an object may grow (K,M, or G). Use either 
+         MAXEXTENTS or MAXSIZE, not both
+FREELISTS: Number of lists for an object that contains blocks available for
+       inserts. FREELIST should be equal to expected number of concurrent
+       transactions on a table. Default is 1
+FREELIST GROUPS: How many freelist groups to create. For RAC environments.
+               Default is 1
+BUFFERPOOL: Part of buffer to keep blocks from this object in. Can be KEEP,
+             DISCARD, or DEFAULT
+ENCRYPT: indicates objects must be encrypted when written to disk
+
+-- Dictionary storage control example. The DEFAULT STORAGE clause specifies
+   storage for objects that do not specify their own storage. Storage clause
+   on an object definition overrides tablespace storage settings
+
+DEFAULT STORAGE Example
+	CREATE TABLESPACE SampleTS 
+		DATAFILE ‘C:\app\Oracle\oradata\SampleTS.dbf’
+		SIZE  5M		EXTENT MANAGEMENT DICTIONARY
+		DEFAULT STORAGE(INITIAL 100K NEXT 50K MAXEXTENTS 10
+                      FREELISTS 10 FREELIST GROUPS 3
+                      BUFFER POOL DEFAULT ENCRYPT);
+
+############################################################################
+Locally Managed Tablespaces
+###########################################################################
+
+-- Storage is managed in the tablespace directly rather than in the data 
+   dictionary
+
+-- uses bitmap to record space usage (1=free block, 0=used block). The bitmap
+  is located in the first file of the tablespace (can't delete the first file
+  in a tablespace without deleteing the entire tablespace)
+
+-- Space allocation can be either AUTOALLOCATE or UNIFORM SIZE. This 
+   replaces the DEFAULT STORAGE which is not available in locally managed
+   tablespaces
+
+-- AUTOALLOCATE is ideal for small tables or tables that grow slowly. This is
+   not good for large or rapidly growing tables as this causes fragmentation
+   of blocks in multiple smaller extents across disk
+
+-- UNIFORM SIZE specifies that all extents must be the same size, which is ideal
+   for large tables or tables that rapidly grow. You can specify the size
+  (default is 1M).
+
+CREATE TABLESPACE SampleTS 
+		DATAFILE ‘C:\app\Oracle\oradata\SampleTS.dbf’
+		SIZE  5M  AUTOEXTEND ON  MAXSIZE 500M
+		EXTENT MANAGEMENT LOCAL
+		AUTOALLOCATE;
+
+CREATE TABLESPACE SampleTS 
+		DATAFILE 'C:\app\Oracle\oradata\SampleTS.dbf'
+		SIZE  5M  AUTOEXTEND ON  MAXSIZE 500M
+		EXTENT MANAGEMENT LOCAL
+		UNIFORM SIZE 512K;
+
+-----------------------Resize a datafile---------------------------------
+
+ALTER DATABASE DATAFILE name RESIZE newsize-K|M|G;
+
+------------------------Turn off AUTOEXTEND----------------------
+
+ALTER DATABASE DATAFILE name AUTOEXTEND ON|OFF;
+
+---------------------------Segment Storage---------------------------------
+
+-- A segment is the space allocated to an object (table, index, etc). Segment
+   storage management can be Manual or Auto
+
+-- Manual segment space management means block usage is maintained in the 
+   data dictionary, which can cause data dictonary contention simialr to 
+   extent management in the data dictionary. Uses Freelists to find
+   available blocks
+
+-- Automatic Segment Space Management (ASSM) is the segment space management
+   recommended by Oracle. Uses bitmap to find available blocks
+
+-- EXTENT MANAGEMENT LOCAL (autoallocate) and SEGMENT SPACE MANAGEMENT AUTO
+   are the default if not specified
+
+CREATE TABLESPACE SampleTS 
+		DATAFILE 'C:\app\Oracle\oradata\SampleTS.dbf'
+		SIZE  5M  AUTOEXTEND ON  MAXSIZE 500M
+		EXTENT MANAGEMENT LOCAL
+		AUTOALLOCATE
+		SEGMENT SPACE MANAGEMENT AUTO;
+
+STORAGE clause
+
+INITIAL: Specifies how initial extent specified by tablespace is interpreted
+MINEXTENTS: Mininum number of extents allocated. Depends on AUTOALLOCATE 
+          minimum and UNIFORM SIZE value
+NEXT, MAXEXTENTS, FREELISTS, FREELIST GROUP: ignored
+PCTINCREASE, MINEXTENTS: Used during segment creation only and ignored afterwards
+MAXSIZE*: Controls maximum size of objects
+BUFFER POOL*: controls where object blocks are placed in the buffer pool
+ENCRYPT: Not applicable in locally managed tablespace
+
+*these are likely the clauses you will use
+
+###########################################################################
+Row Chaining and Row Migration
+###########################################################################
+
+-- To find the number of chained and migrated rows, you can use the following
+   query. This query is not very reliable. If Chain_Cnt/Num_Rows > 0.20 then
+   a table reorgainization should be considered
+
+SELECT Table_Name, Num_Rows, Chain_Cnt, Chain_Cnt/Num_Rows Chained
+FROM User_Tables;
+
+-- The more reliable approach to find chained and migrated rows
+
+STEP 1) Create the Chained_Rows table with this script
+	 @%ORACLE_HOME%/rdbms/admin/utlchain.sql
+ 
+STEP 2) Analyze the table(s) to identify chained rows
+
+ANALYZE TABLE tablename LIST CHAINED ROWS;
+
+STEP 3) Query the chained/migrated rows table from STEP 1 to get the ROWIDs
+       for the chained rows
+
+SELECT Head_RowID 
+FROM Chained_Rows
+WHERE Owner_Name = 'OWNER'
+AND Table_Name = 'TABLENAME';
+
+-- The find the actual rows in the table containing the chained/migrated rows
+
+SELECT *
+FROM table
+WHERE ROWID IN (
+    (SELECT Head_RowID 
+    FROM Chained_Rows
+    WHERE Owner_Name = ‘OWNER’
+    AND Table_Name = ‘TABLENAME’;
+
+--------------------Eliminating Chained Rows-----------------------------
+
+-------------------------Eliminating Migrated Rows------------------------
+
+########################################################################
+Shrinking a Table
+########################################################################
+
+-- Coalesces rows together into as few blocks as possible
+-- Moves high water mark, reducing read operations (blocks are more densely
+   populated)
+-- Releases unused blocks back to the tablespace
+-- Moves HWM to a point immediately after the last used block unless COMPACT
+   keyword is used (useful when space must be maintained)
+-- Releases all extra space back to the tablespace
+-- NOTE**  will prevent flashback table from working for flashback to a time
+    before the shrink operation
+
+CONSIDERATIONS:
+
+--'row movement' MUST be enabled for the table
+-- Must be in ASSM tablespace
+-- Make sure indexes are mainted because of row movement and that triggers
+   do not fire
+-- Can be used on Heap tables, Indexes, Partitions, Materialized views,
+  and LOB segments
+
+
+WHEN TO USE SHRINKIG:
+
+-- Table contains multiple blocks with lots of unused space
+
+-- The following commands shrinks a tablespace
+
+ALTER TABLE tablename ENABLE ROW MOVEMENT;
+ALTER TABLE tablename SHRINK SPACE;
+ALTER TABLE tablename DISABLE ROW MOVEMENT;
+
+-- To shrink and preserve HWM use the following commands
+
+ALTER TABLE tablename ENABLE ROW MOVEMENT;
+ALTER TABLE tablename SHRINK SPACE COMPACT;
+ALTER TABLE tablename DISABLE ROW MOVEMENT;
+
+-- You can specify CASCADE to apply the shrink operation to dependent 
+   objects (indexes, etc). The following Compact rows, release free space,
+    move HWM on 'tablename' and all it's dependent objects
+
+ALTER TABLE tablename SHRINK SPACE CASCADE;
+
+--  The following compacts rows only (space, HWM untouched)
+
+ALTER TABLE tablename SHRINK SPACE COMPACT CASCADE;
+	

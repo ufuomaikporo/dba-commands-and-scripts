@@ -1,0 +1,347 @@
+################################################################################################################
+# SQL SERVER DATABASE OBJECTS
+################################################################################################################
+
+--------------------------------------- View object defintions ----------------------------------
+
+-- Works on Views, triggers, default constraints, etc (does not work for table or pk and fk constraints)
+-- View the object definition of an object named 'tu_applist' in the 'dbo' schema 
+
+---- OPTION 1) Use the sp_helptext stored procedure
+
+EXEC sp_helptext N'dbo.tu_applist'; 
+
+-- OPTION 2) Use the OBJECT_DEFINITION function
+
+SELECT OBJECT_DEFINITION (OBJECT_ID(N'dbo.tu_applist'));  
+
+-- OPTION 3) Use the sql_modules table in the 'sys' schema
+
+SELECT definition FROM sys.sql_modules
+WHERE object_id = OBJECT_ID(N'dbo.tu_applist')
+
+------------------------------------- View all Dependent objects on a table ------------------------
+
+-- View all dependent objects on a table
+
+OPTION 1)
+
+SELECT DISTINCT obj.type, 
+		CASE 
+			WHEN obj.type = 'PK'
+				THEN 'IF OBJECT_ID(''' + SCHEMA_NAME(obj.schema_id) + '.' + i.name + ''', ''PK'') IS NULL BEGIN ALTER TABLE '
+				+ SCHEMA_NAME(obj.schema_id) + '.' + OBJECT_NAME(ic.object_id) + ' WITH CHECK ADD CONSTRAINT ' + i.name 
+				+ ' PRIMARY KEY ' + i.type_desc COLLATE SQL_Latin1_General_CP1_CI_AS  + ' ('
+				+ (SELECT STUFF(
+								(SELECT ', ' + COL_NAME(object_id, column_id) +
+									CASE WHEN is_descending_key = 1 THEN ' DESC'
+										ELSE ' ASC'
+									END
+								FROM sys.index_columns 
+								WHERE object_id = ic.object_id
+									AND index_id = ic.index_id
+								ORDER BY key_ordinal
+								FOR XML PATH(N''), TYPE
+								).value(N'.[1]', N'nvarchar(max)'), 1, 2, N''
+							)
+							
+					) + ') END;'
+			WHEN obj.type = 'D' 
+				THEN 'IF OBJECT_ID(''' + SCHEMA_NAME(obj.schema_id) + '.' + df.name + ''', ''D'') IS NULL BEGIN ALTER TABLE ' 
+				+ SCHEMA_NAME(obj.schema_id) + '.' + OBJECT_NAME(df.parent_object_id) + '
+	   			  ADD CONSTRAINT ' + df.name + '
+	   			  DEFAULT ' + definition + ' FOR ' + COL_NAME(df.parent_object_id, df.parent_column_id) + ' END;'
+			WHEN obj.type = 'F' 
+				THEN 	'IF OBJECT_ID (''' + SCHEMA_NAME(obj.schema_id) + '.' + OBJECT_NAME(constraint_object_id) + ''', ''F'') IS NULL
+			BEGIN
+			ALTER TABLE ' + QUOTENAME(SCHEMA_NAME(obj.schema_id)) +'.'+ QUOTENAME(OBJECT_NAME(fkc.parent_object_id) )
+			+ ' WITH CHECK ADD CONSTRAINT ' + QUOTENAME(OBJECT_NAME(constraint_object_id)) 
+			+ CHAR(10) + 'FOREIGN KEY(' + (SELECT STUFF(
+														(SELECT ', ' + QUOTENAME(COL_NAME(fkc2.parent_object_id, fkc2.parent_column_id))
+														 FROM sys.foreign_key_columns fkc2 
+														 WHERE constraint_object_id = fkc.constraint_object_id
+														 ORDER BY fkc2.constraint_column_id
+														 FOR XML PATH(N''), TYPE
+														 ).value(N'.[1]', N'nvarchar(max)'), 1, 2, N''
+													 )
+										)
+			+ CHAR(10) + ') REFERENCES ' + QUOTENAME(SCHEMA_NAME(tab2.schema_id)) + '.' + QUOTENAME(OBJECT_NAME(fkc.referenced_object_id)) + '(' 
+			+ (SELECT STUFF(
+							(SELECT ', ' + QUOTENAME(COL_NAME(fkc2.referenced_object_id, fkc2.referenced_column_id))
+							FROM sys.foreign_key_columns fkc2 
+							WHERE constraint_object_id = fkc.constraint_object_id
+							ORDER BY fkc2.constraint_column_id
+							FOR XML PATH(N''), TYPE
+							).value(N'.[1]', N'nvarchar(max)'), 1, 2, N''
+						  )
+				)
+				+')
+			END '
+			WHEN obj.type = 'TR' 
+				THEN (SELECT definition FROM sys.sql_modules WHERE object_id = obj.object_id)
+			ELSE obj.type_desc COLLATE SQL_Latin1_General_CP1_CI_AS
+	   END AS DDL
+FROM sys.objects obj
+LEFT JOIN sys.default_constraints df ON obj.object_id = df.object_id
+LEFT JOIN sys.foreign_key_columns fkc ON fkc.constraint_object_id = obj.object_id
+LEFT JOIN sys.tables tab2 
+ON tab2.object_id = fkc.referenced_object_id
+LEFT JOIN sys.indexes i ON i.name = OBJECT_NAME(obj.object_id)
+LEFT JOIN sys.index_columns ic
+ON i.object_id = ic.object_id
+AND i.index_id = ic.index_id
+WHERE OBJECT_NAME(obj.parent_object_id) IN ('Class2024', 'IsMCA2024')
+
+OPTION 2)
+
+SELECT 
+    referencing_schema_name, referencing_entity_name, referencing_id, 
+    referencing_class_desc, is_caller_dependent
+FROM 
+    sys.dm_sql_referencing_entities ('dbo.ListDomain', 'OBJECT');
+GO
+
+OPTION 3)
+
+SELECT
+    OBJECT_NAME(referencing_id) AS referencing_entity_name,
+    o.type_desc AS referencing_description,
+    COALESCE (COL_NAME(referencing_id, referencing_minor_id), '(n/a)') AS referencing_minor_id,
+    referencing_class_desc,
+    referenced_server_name,
+    referenced_database_name,
+    referenced_schema_name,
+    referenced_entity_name,
+    COALESCE (COL_NAME(referenced_id, referenced_minor_id), '(n/a)') AS referenced_column_name,
+    is_caller_dependent,
+    is_ambiguous
+FROM sys.sql_expression_dependencies AS sed
+    INNER JOIN sys.objects AS o
+        ON sed.referencing_id = o.object_id
+WHERE referenced_entity_name = N'ListDomain';
+
+-------------------------------------- Rename Database ------------------------------
+
+USE master;
+GO
+ALTER DATABASE OldDBName SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+GO
+ALTER DATABASE OldDBName MODIFY NAME = NewDBName;
+GO
+ALTER DATABASE NewDBName SET MULTI_USER;
+GO
+
+################################################################################################################
+# TABLES
+#################################################################################################################
+
+------------------------------------- CHECKS ---------------------
+
+-- Check if a table has an identity column. Returns '0' if there is no identity column. Returns 1 if there is ann identity column
+SELECT OBJECTPROPERTY(OBJECT_ID('dbo.AlignmentRange'), 'TableHasIdentity')
+
+-- Check if a column exists or not. it returns null if the column does not exist
+COL_LENGTH('TableName', 'ColumnName')
+
+-- Get object name (object types U - table, 'TR' - trigger)
+OBJECT_NAME(object_id, 'object_type')
+
+-- Get column name
+COL_NAME(table_id, column_id)
+
+-- Find all tables that have both a 'Code' and 'Descr' columns
+SELECT DISTINCT table_name
+FROM INFORMATION_SCHEMA.columns
+WHERE COL_LENGTH(table_name, 'Code') IS NOT NULL
+AND COL_LENGTH(table_name, 'Descr') IS NOT NULL
+
+-- Allow identity insert
+SET IDENTITY_INSERT dbo.Tool ON;  
+
+---------------------------------------- CREATE TABLE ------------------------------------
+
+- Copy a table's structure and data into another table
+
+SELECT * INTO CopyTable
+FROM OriginalTable;
+
+- Copy a table's structure ONLY
+
+SELECT * INTO CopyTable
+FROM OriginalTable
+WHERE 1 = 0;
+
+-------------------------------------- MODIFYING COLUMN DEFINITION -----------------------------------------
+
+-- Constraints (FK, PK, UNIQUE, CHECK) and nonclustered indexes may need to be dropped first before you can modify a column definition
+
+ALTER TABLE ListDomain ALTER COLUMN Id Numeric(10,0);
+
+--------------------------------------------- MOVE ALL USER OBJECTS FROM TO NEW SCHEMA ------------------------------
+
+DECLARE @SQL NVARCHAR(MAX)
+DECLARE @ObjectName NVARCHAR(200)
+DECLARE @SourceSchema NVARCHAR(100) = 'sde'
+DECLARE @DestinationSchema NVARCHAR(100) = 'dbo'
+
+DECLARE ObjectList_cur CURSOR FOR
+SELECT name FROM sys.objects
+WHERE type IN ('U', 'V', 'P', 'FN')
+AND SCHEMA_NAME(Schema_id) = 'sde'
+
+OPEN ObjectList_cur
+FETCH NEXT FROM ObjectList_cur INTO @ObjectName
+
+WHILE @@FETCH_STATUS = 0
+BEGIN
+	SET @SQL = 'ALTER SCHEMA ' + @DestinationSchema + ' TRANSFER ' + @SourceSchema + '.' + @ObjectName
+	EXECUTE (@SQL)
+	FETCH NEXT FROM ObjectList_cur INTO @ObjectName
+END
+
+----------------------------------------------- TEMPORAL TABLES -------------------------------------------------
+https://learn.microsoft.com/en-us/sql/relational-databases/tables/stopping-system-versioning-on-a-system-versioned-temporal-table?view=sql-server-ver16
+
+-- Manually undo temporal table
+
+-- 1) Turn-off SYSTEM_VERSIONING
+
+ALTER TABLE dbo.InlineInspectionFeature SET (SYSTEM_VERSIONING = OFF);
+/*Optionally, DROP PERIOD if you want to revert temporal table to a non-temporal*/
+ALTER TABLE dbo.InlineInspectionFeature
+DROP PERIOD FOR SYSTEM_TIME;
+
+-- 2) Delete history table associated with the temporal table
+
+TRUNCATE TABLE History.InlineInspectionFeature
+DROP TABLE History.InlineInspectionFeature
+
+-- 3) Remove default constraint on period columns then delete period columns
+
+ALTER TABLE dbo.InlineInspectionFeature
+DROP CONSTRAINT DF_InlineInspectionFeature_ValidFrom
+
+ALTER TABLE dbo.InlineInspectionFeature
+DROP COLUMN ValidFrom
+
+
+--------------------- Temporarily stop system-versioning
+
+BEGIN TRAN
+ALTER TABLE dbo.Department SET (SYSTEM_VERSIONING = OFF);
+TRUNCATE TABLE [History].[DepartmentHistory]
+WITH (PARTITIONS (1,2))
+ALTER TABLE dbo.Department SET
+(
+SYSTEM_VERSIONING = ON (HISTORY_TABLE = History.DepartmentHistory)
+);
+COMMIT ;
+
+---------------------------------------------------- MODIFY TABLES -------------------------------------------------
+
+-- Add a column to a table
+
+ALTER TABLE ImportField ADD Column1 NUMERIC(1,0) NOT NULL DEFAULT 0, Column2 VARCHAR(100);
+
+-- Add a foreign key to a table. WITH CHECK enables the foreign key an validates table data
+
+ALTER TABLE [dbo].[CasingReading]  WITH CHECK 
+ADD  CONSTRAINT [FK_CasingReadingCasingId] FOREIGN KEY([CasingId])
+	REFERENCES [dbo].[Casing] ([Id])
+
+-- Disable all table constraints
+
+ALTER TABLE YourTableName NOCHECK CONSTRAINT ALL
+-- Enable all table constraints
+ALTER TABLE YourTableName CHECK CONSTRAINT ALL
+
+-- Disable single constraint
+
+ALTER TABLE YourTableName NOCHECK CONSTRAINT YourConstraint
+-- Enable single constraint
+ALTER TABLE YourTableName CHECK CONSTRAINT YourConstraint
+
+-- Disable all constraints for database
+
+EXEC sp_msforeachtable "ALTER TABLE ? NOCHECK CONSTRAINT all"
+-- Enable all constraints for database
+EXEC sp_msforeachtable "ALTER TABLE ? WITH CHECK CHECK CONSTRAINT all
+
+------- Move an object to a new schema/ change object owner
+
+ALTER SCHEMA DestinationSchema TRANSFER SourceSchema.ObjectName
+
+-- Rename a TABLE. Change 'SalesTerritory' to 'SalesTerr' in the 'Sales' schema
+
+EXEC [LinkedServerName].DatabaseName.dbo.sp_rename 'SchemaName.OldTableName', 'NewTableName';
+
+EXEC sp_rename 'SchemaName.TableName', 'NewTableName';
+
+-- Rename a column
+
+EXEC sp_rename 'SchemaName.TableName.OldColumnName', 'NewColumnName', 'COLUMN';
+
+-- Delete a table (this CASCADE CONSTRAINT option drops foreign keys referencing to primary or unique keys in the dropped table)
+
+DROP TABLE schema.tableName CASCADE CONSTRAINTS;
+
+
+########################################################################################################
+# VIEW
+########################################################################################################
+
+######################################## Get list of Views that are Invalid ####################
+
+-- Refresh the metadata for all views in the 'dbo' schema
+
+SET NOCOUNT ON
+DECLARE @viewName AS VARCHAR(255)
+DECLARE @count int
+
+DROP TABLE IF EXISTS ##InvalidViews
+CREATE TABLE ##InvalidViews (ViewName VARCHAR(100), ErrMsg VARCHAR(MAX))
+
+DECLARE listOfViews CURSOR FOR
+    SELECT [TABLE_NAME]
+      FROM INFORMATION_SCHEMA.VIEWS v
+           LEFT OUTER JOIN sys.sql_dependencies d ON v.[TABLE_NAME] = OBJECT_NAME(d.object_id)
+     WHERE [TABLE_SCHEMA] = 'dbo' AND
+           (d.[class_desc] IS NULL OR d.[class_desc] <> 'OBJECT_OR_COLUMN_REFERENCE_SCHEMA_BOUND')
+     GROUP BY [TABLE_NAME]
+     ORDER BY [TABLE_NAME]
+
+OPEN listOfViews
+FETCH NEXT FROM listOfViews into @viewName
+
+SET @count = 0
+WHILE (@@FETCH_STATUS <> -1)
+BEGIN
+    BEGIN TRY
+        EXEC sp_refreshview @viewName
+    END TRY
+    BEGIN CATCH
+        IF XACT_STATE() = -1 ROLLBACK
+		BEGIN
+			INSERT INTO ##InvalidViews
+			SELECT @ViewName, @viewName + ' has ERRORS: ' + ERROR_MESSAGE()
+			PRINT @viewName + ' has ERRORS: ' + ERROR_MESSAGE()
+		END
+        SET @count = @count + 1
+    END CATCH
+    FETCH NEXT FROM listOfViews INTO @viewName
+END
+
+CLOSE listOfViews
+DEALLOCATE listOfViews
+
+SELECT * FROM ##InvalidViews
+PRINT 'Total Views with errors: ' + CAST(@count AS nvarchar(10))
+
+SET NOCOUNT OFF
+
+
+#####################################################################################################
+# STORED PROCEDURES AND TRIGGERS
+#####################################################################################################
+
+

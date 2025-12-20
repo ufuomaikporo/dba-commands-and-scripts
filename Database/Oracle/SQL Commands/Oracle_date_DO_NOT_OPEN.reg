@@ -1,0 +1,4 @@
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Oracle\KEY_OraDB12Home1]
+"NLS_DATE_FORMAT"="YYYY-MM-DD:HH24:MI:SS"

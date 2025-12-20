@@ -1,0 +1,15 @@
+
+--------------------------------- Error message --------------------------------------
+Debug:   ERROR   Exception                 Error in publishing to database.
+System.Data.SqlClient.SqlException (0x80131904): The INSERT statement conflicted with the FOREIGN KEY constraint "FK_RiskResultModule_RiskResultModuleGroup". The conflict occurred in database "ATCO_IRASV6_STAGE_TEST_OCT_20", table "dbo.RiskResultModuleGroup", column 'Id'.
+The statement has been terminated.
+------------------------------------  Fix 
+SET IDENTITY_INSERT [dbo].[RiskResultModuleGroup] ON
+GO
+INSERT [dbo].[RiskResultModuleGroup] ([Id], [ModuleGroupName]) VALUES (CAST(1 AS Numeric(18, 0)), N'Probability')
+GO
+INSERT [dbo].[RiskResultModuleGroup] ([Id], [ModuleGroupName]) VALUES (CAST(2 AS Numeric(18, 0)), N'Consequence')
+GO
+SET IDENTITY_INSERT [dbo].[RiskResultModuleGroup] OFF
+GO
+--------------------------------------------------

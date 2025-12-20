@@ -1,0 +1,44 @@
+---------------------------------------- INSTALL WSL ----------------------------------------
+
+Windows Susbsystem for Linux (WSL) allows you to run a linux environment directly on 
+windows without using a virtual machine or a dual-boot setup
+
+STEP 1) wsl --install
+STEP 2) sudo apt update
+STEP 3) sudo apt install pgloader
+
+
+IF STEP 2) fails make sure the  i) Hyper-V Host Compute Service and ii) Hyper-V Virtual Machine Management" 
+services are running (If they do not appear in windows services restart the machine if not). If they 
+still do not appear after restart run the following commands and restart the machine. If the
+services are running then re-install wsl STEP 1) 
+
+i) dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart
+ii) dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart
+iii) dism.exe /online /enable-feature /featurename:Microsoft-Hyper-V-All /all /norestart
+iv) dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart
+
+
+----------------------------------- Connect to database_name
+# Basic remote connection
+psql -h hostname -p port -U username -d database_name
+
+# Example with specific values
+psql -h 192.168.1.100 -p 5432 -U postgres -d mydb
+
+# Using hostname instead of IP
+psql -h db.example.com -p 5432 -U myuser -d production
+
+# Prompt for password
+psql -h hostname -p port -U username -d database_name -W
+
+--------------------------- Get port number 
+
+REM Find postgresql.conf file (usually in data directory)
+dir "C:\Program Files\PostgreSQL\*\data\postgresql.conf" /s
+
+REM Check the port setting
+findstr /n "port" "C:\Program Files\PostgreSQL\13\data\postgresql.conf"
+
+REM More specific search
+findstr /r "^port.*=" "C:\Program Files\PostgreSQL\13\data\postgresql.conf"

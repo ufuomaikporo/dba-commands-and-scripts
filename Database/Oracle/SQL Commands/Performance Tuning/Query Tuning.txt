@@ -1,0 +1,60 @@
+#################################################################################
+# BLOCKING SESISONS
+#################################################################################
+
+-- Find blocking sesison on an object using the object id or schema/owner name 
+
+STEP 1) find the blocking session sid and serial#
+
+SELECT s.sid, s.serial#, Machine, program, OSUSER, l.addr, l.kaddr, l.type, l.ctime, l.block
+FROM v$lock l
+JOIN v$session s 
+ON l.sid = s.sid
+  WHERE id1 IN (SELECT object_id FROM all_objects WHERE owner = 'ETP_IRASV6_STAGE_OWNR' 
+               --AND object_name =<glb temp table>
+               ) --find which sessions lock the temp table
+			   
+STEP 2) Kill the blocking sesison (or ask user to commit and close their session)
+
+ALTER SYSTEM KILL SESSION '267,17948'; 
+               
+
+##############################################################################
+# QUERY TRACING
+###############################################################################
+https://oracle-base.com/articles/misc/sql-trace-10046-trcsess-and-tkprof
+https://blogs.oracle.com/connect/post/beginning-performance-tuning-trace-your-steps
+
+---------- STEP 1) turn on tracing for the session 
+
+
+OPTION 1) EXEC DBMS_MONITOR.session_trace_enable(session_id =>1234, serial_num=>1234, waits=>TRUE, binds=>FALSE);
+OPTION 2) EXEC DBMS_MONITOR.session_trace_enable;
+OPTION 3) ALTER SESSION SET sql_trace=TRUE;
+
+-----------STEP 2) Execute the query
+
+-----------STEP 3) Find the User session ID that needs to be traced
+
+-- Run this in the user session that needs to be traced
+
+SELECT SYS_CONTEXT('userenv','sid') Session_ID FROM dual;
+
+-----------STEP 4) Find the trace file using the query below and user SID 
+
+-- Run this as a DBA or user with privileges to view dynamic performance views
+
+SELECT
+   r.value                                ||'\diag\rdbms\'||
+   sys_context('USERENV','DB_UNIQUE_NAME')       ||'\'||
+   sys_context('USERENV','DB_UNIQUE_NAME') ||'\trace\'||
+   sys_context('USERENV','DB_UNIQUE_NAME')       ||'_ora_'||p.spid||'.trc'
+   as tracefile_name
+FROM v$session s, v$parameter r, v$process p
+WHERE r.name = 'diagnostic_dest'
+AND s.sid = 392
+AND p.addr = s.paddr;
+
+---------STEP 5) Convert trace file output to a readable format
+
+tkprof C:\directory\ann1_ora_11408.trc C:\directory\ann1_ora_11408.out sys=no waits=yes aggregate=no width=180

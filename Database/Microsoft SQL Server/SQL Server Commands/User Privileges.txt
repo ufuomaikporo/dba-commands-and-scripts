@@ -1,0 +1,488 @@
+#################################################################################################################
+# OTHER USEFUL COMMANDS 
+#################################################################################################################
+
+-- Run this in cmd or powershell to get the list of users assigned to a windows group
+
+NET GROUP [group_name_without_domain] /domain
+
+##################################################################################################################
+# VIEW CONNECTED SESSIONS/ LOCKED TABLES
+##################################################################################################################
+
+--------------------SEE CONNECTED SESSIONS (users connected to databases on server)
+USE master 
+
+SELECT  @@ServerName AS SERVER
+ ,d.name
+ ,sp.spid
+ ,sp.loginame
+ ,sp.login_time
+ ,sp.status
+ ,sp.open_tran
+ ,sp.hostname
+ ,sp.program_name
+ ,physical_io
+ ,memusage MemoryUsage
+ ,sp.blocked BlockedBy
+ ,cpu 
+ ,last_batch
+ ,waittime
+ ,lastwaittype
+ ,waitresource
+ ,nt_username WindowsUserName
+ ,t.text
+FROM sys.databases d 
+LEFT JOIN sysprocesses sp ON d.database_id = sp.dbid
+CROSS APPLY sys.dm_exec_sql_text(sp.sql_handle) AS t
+WHERE loginame IS NOT NULL AND loginame NOT LIKE 'NT SERVICE\%'    
+AND hostname <> ''
+AND sp.program_name NOT IN ('Microsoft SQL Server Management Studio - Transact-SQL IntelliSense', 'Microsoft SQL Server Management Studio')
+ORDER BY 2
+
+----------------------------- kILL SESSIONS connected to a database
+
+DECLARE @SQL NVARCHAR(MAX)
+DECLARE db_cursor CURSOR FOR
+SELECT 'KILL ' + CAST(spid AS NVARCHAR)
+FROM sys.databases d 
+LEFT JOIN sysprocesses sp ON d.database_id = sp.dbid
+WHERE  name = 'DRAS_IRASv6_DEMO_QA' AND 
+loginame IS NOT NULL  AND 
+loginame <> 'sa' AND loginame NOT LIKE 'NT SERVICE\%'     
+
+OPEN db_cursor  
+FETCH NEXT FROM db_cursor INTO @SQL  
+
+WHILE @@FETCH_STATUS = 0  
+BEGIN  
+     EXECUTE (@SQL)
+	
+     FETCH NEXT FROM db_cursor INTO @SQL 
+END 
+
+CLOSE db_cursor  
+DEALLOCATE db_cursor 
+
+-------------------------------------- SEE ACTIVE RUNNING SESSIONS -----------------------------
+
+------- OPTION 1)
+
+SELECT p.spid, p.status,p.hostname,p.loginame,p.cpu,r.start_time, t.text, p.program_name
+FROM sys.dm_exec_requests AS r, sys.sysprocesses p 
+CROSS APPLY sys.dm_exec_sql_text(p.sql_handle) t
+WHERE p.status NOT IN ('sleeping', 'background')
+AND r.session_id=p.spid
+
+------- OPTION 2)
+
+SELECT 
+p.loginame,
+p.status,
+p.hostname,
+req.session_id,
+req.status,
+req.command,
+req.cpu_time,
+req.total_elapsed_time,
+sqltext.TEXT,
+program_name
+FROM sys.dm_exec_requests req, sys.sysprocesses p 
+CROSS APPLY sys.dm_exec_sql_text(sql_handle) AS sqltext
+WHERE  req.session_id=p.spid
+
+----------------------------------- Find Locks on Table within a database ----------------------------
+
+USE [DatabaseName];
+GO
+
+SELECT * FROM sys.dm_tran_locks
+  WHERE resource_database_id = DB_ID()
+  AND resource_associated_entity_id = OBJECT_ID(N'SchemaName.TableName');
+  
+###########################################################################################################
+# CREATE USER/LOGIN
+############################################################################################################
+
+---------------------------------- CREATE LOGIN for SQL SERVER ---------------------------------------------
+https://www.mssqltips.com/sqlservertip/5242/adding-users-to-azure-sql-databases/
+https://learn.microsoft.com/en-us/sql/t-sql/statements/create-user-transact-sql?view=sql-server-ver16
+
+--- Create login from a windows domain account
+
+CREATE LOGIN [<domainName>\<login_name>] FROM WINDOWS;
+GO
+
+--- Create a SQL Server login
+
+CREATE LOGIN TestLogin
+WITH PASSWORD = 'SuperSecret52&&', 
+CHECK_POLICY = OFF; -- circumvent windows password requirements
+GO
+
+------------------------------ CREATE LOGIN FOR AZURE DATABASE -----------------------
+
+-- Creating an Azure Active Directory (Microsoft Entra ID) login
+
+CREATE LOGIN [name@domain.com] FROM EXTERNAL PROVIDER
+  
+-- Create SQL Server login in Azure
+
+CREATE LOGIN TestLogin
+WITH PASSWORD = 'SuperSecret52&&', 
+GO
+
+--------------------------------------------- CREATE USER IN SQL SERVER ---------------------------------
+
+-- Create user mapped to SQL Server authenticated or Windows authenticated login
+
+CREATE USER Wanida FOR LOGIN WanidaBenshoof   
+    WITH DEFAULT_SCHEMA = Marketing;  
+GO  
+
+-------------------------------------- CREATE USER FOR AZURE DATABASE ----------------------
+
+-- User for Microsoft Entra ID login
+
+CREATE USER [name@domain.com] 
+FROM EXTERNAL PROVIDER 
+WITH DEFAULT_SCHEMA = dbo;  
+
+-- Create SQL Server authenticated user 
+
+CREATE USER [test] 
+FOR LOGIN [test] 
+WITH DEFAULT_SCHEMA = dbo; 
+
+------- Reconcile orphaned users with a newly created login
+
+EXEC sp_change_users_login 'Update_One','User123','User123'
+
+
+-- Drop a login
+
+DROP LOGIN [[<domainName>\<login_name>]]
+
+
+--------------------------------------- Change user password and circumvent windows password requirements ---
+
+ALTER LOGIN sa WITH PASSWORD = 'ty^9!nm~',CHECK_POLICY = OFF;
+
+------------------------------------------------- impersonate a user ---------------------------------------------
+
+-- you can use this to check user access and privileges
+
+EXECUTE AS LOGIN = 'EDDYFINDT\Josh_Goertzen'
+
+SELECT SUSER_SNAME()
+
+-- Undo impersonation with REVERT command
+
+REVERT
+
+---------CREATE User
+
+CREATE USER [Chris_Test2] FOR LOGIN [Chris_Test2] WITH DEFAULT_SCHEMA=[dbo]
+
+#################################################################################################################
+# SERVER PRIVILEGES AND ROLES 
+##################################################################################################################
+
+-- Get Server permissions and roles granted DIRECTLY OR INDIRECTLY to user
+
+EXECUTE AS LOGIN = 'EDDYFINDT\Sheila_Cubid'
+SELECT SUSER_SNAME()
+SELECT permission_name AS name , UPPER(entity_name) + '_PERMISSIONS' 
+FROM fn_my_permissions(NULL, 'SERVER')
+UNION
+SELECT name COLLATE Latin1_General_CI_AI, type_desc COLLATE Latin1_General_CI_AI
+FROM [sys].[server_principals]
+WHERE [type] in ('R','G') AND is_member(name) = 1
+ORDER BY 2
+REVERT
+GO
+
+-- Get the server privileges and role granted directly to user
+
+DECLARE @UserName NVARCHAR(400) = 'EDDYFINDT\Dras users'
+SELECT p1.name UserName, p1.type_desc UserType,
+	  'Server Permission' PermissionType, permission_name COLLATE SQL_Latin1_General_CP1_CI_AS  AS Permission 
+FROM sys.server_permissions pm
+JOIN sys.server_principals p1 ON pm.grantee_principal_id = p1.principal_id
+JOIN sys.server_principals p2 ON pm.grantor_principal_id = p2.principal_id
+WHERE p1.name = @UserName
+UNION
+SELECT p2.name UserName, p2.type_desc UserType,
+	  'Database Role' PermissionType, p1.name COLLATE SQL_Latin1_General_CP1_CI_AS Role
+FROM sys.server_role_members rm
+JOIN sys.server_principals p1
+ON p1.principal_id = rm.role_principal_id
+JOIN sys.server_principals p2 ON p2.principal_id = rm.member_principal_id
+WHERE p2.name = @UserName
+
+---------------------------------- View all the databases a user has access to -------------------------------------
+
+EXECUTE AS LOGIN = 'DRAS\Adam_Shill'
+SELECT SUSER_SNAME()
+SELECT * FROM sys.databases 
+WHERE HAS_DBACCESS(name) = 1
+ORDER BY name
+REVERT
+GO
+
+------------------------------------------- View current Server-level Roles for User -------------------------------------
+
+https://learn.microsoft.com/en-us/sql/relational-databases/system-functions/sys-fn-my-permissions-transact-sql?view=sql-server-ver16
+
+SELECT r.name AS Role, m.name AS Principal
+FROM
+    master.sys.server_role_members rm
+    INNER JOIN
+    master.sys.server_principals r ON r.principal_id = rm.role_principal_id AND r.type = 'R'
+    INNER JOIN
+    master.sys.server_principals m ON m.principal_id = rm.member_principal_id
+WHERE m.name = 'EDDYFINDT\Ufuoma_Ikporo'
+
+-----------------------------------------  View server-level permissions ------------------
+
+------- OPTION 1) Shows permissions granted directly and indirectly (through roles) -- MORE ACCURATE
+
+-- For a user other than yourself you can use the IMPERSONATE command to see their permissions
+EXECUTE AS LOGIN = 'EDDYFINDT\Josh_Goertzen'
+SELECT SUSER_SNAME()
+SELECT * FROM fn_my_permissions(NULL, 'SERVER');
+REVERT
+GO
+
+-------- OPTION 2) Only shows permissions explicitly granted to user (excludes permissions granted through roles)
+
+SELECT all_permissions.permission_name AS [Permission Name], p.name AS [Current User]
+FROM (
+    SELECT DISTINCT permission_name 
+    FROM sys.server_permissions
+) all_permissions
+LEFT JOIN (
+    SELECT b.name, a.permission_name
+    FROM sys.server_permissions a
+    JOIN sys.server_principals b on a.grantee_principal_id = b.principal_id 
+    WHERE b.name  = 'EDDYFINDT\DBA'
+) p ON p.permission_name = all_permissions.permission_name
+
+----OR
+
+SELECT sp.state_desc AS "Permission State", sp.permission_name AS "Permission",
+sl.name "Principal Name",sp.class_desc AS "Object Class", ep.name "End Point"
+FROM sys.server_permissions AS sp
+  JOIN sys.server_principals AS sl
+    ON sp.grantee_principal_id = sl.principal_id
+  LEFT JOIN sys.endpoints AS ep
+    ON sp.major_id = ep.endpoint_id
+WHERE sl.name = 'DRAS\Adam_Shill';
+
+--------------------------------------------------- Add user to a Server Role ---------------------------------------
+
+ALTER SERVER ROLE diskadmin ADD MEMBER [Domain\Juan] ;  
+GO 
+		
+#################################################################################################################
+# DATABASE ROLES & PRIVILEGES
+##################################################################################################################
+
+NOTE** Show roles and or privileges for user on the database where the query is being executed
+
+--------- DATABASE ROLES AND PERMISSIONS granted to user both IMPLICITLY AND EXPLICITLY on the target database
+
+EXECUTE AS LOGIN = 'EDDYFINDT\Vincent_Soo'
+SELECT SUSER_SNAME()
+SELECT permission_name AS name , UPPER(entity_name) + '_PERMISSIONS' 
+FROM fn_my_permissions(NULL, 'DATABASE')
+UNION
+SELECT name COLLATE Latin1_General_CI_AI, type_desc COLLATE Latin1_General_CI_AI
+FROM [sys].[database_principals]
+WHERE [type] in ('R','G') AND is_member(name) = 1
+UNION
+SELECT permission_name COLLATE Latin1_General_CI_AI   --p1.name UserName, 
+	  ,class_desc + '_PERMISSIONS'
+FROM sys.database_permissions pm
+JOIN sys.database_principals p1 ON pm.grantee_principal_id = p1.principal_id
+JOIN sys.database_principals p2 ON pm.grantor_principal_id = p2.principal_id
+WHERE p1.name = USER
+ORDER BY 2 DESC, 1
+
+REVERT
+GO
+
+
+--- DATABASES that the current user has access to
+
+EXECUTE AS LOGIN = 'EDDYFINDT\Winston_Lee'
+SELECT name [User Has Access] FROM sys.sysdatabases
+WHERE HAS_DBACCESS(name) = 1
+REVERT
+GO
+
+-- Windows group a user belongs to 
+
+EXEC xp_logininfo 'DOMAIN\Username', 'all';
+
+--------------------------------------- View Database-Level Permissions for User -----------------------------
+
+https://learn.microsoft.com/en-us/sql/relational-databases/system-functions/sys-fn-my-permissions-transact-sql?view=sql-server-ver16
+
+-- DATABASE-LEVEL PERMISSIONS granted DIRECTLY or INDIRECTLY to user on a database (including through database roles, server roles, and user groups)
+
+USE AdventureWorks2022;
+	
+EXECUTE AS USER = 'EDDYFINDT\Josh_Goertzen'
+SELECT SUSER_SNAME()
+SELECT * FROM fn_my_permissions(NULL, 'DATABASE');
+
+REVERT
+GO
+
+---- DATABASE-LEVEL PERMISSIONS granted DIRECTLY to user (excludes permissions granted indirectly through roles, user groups, etc)
+
+SELECT p1.name UserName, p1.type_desc UserType, p1.default_schema_name UserDefaultSchema,
+	  'Database Permission' PermissionType, permission_name COLLATE SQL_Latin1_General_CP1_CI_AS  AS Permission 
+FROM sys.database_permissions pm
+JOIN sys.database_principals p1 ON pm.grantee_principal_id = p1.principal_id
+JOIN sys.database_principals p2 ON pm.grantor_principal_id = p2.principal_id
+WHERE p1.name = USER
+
+-------------- DATABASE ROLE granted to users (IMPLICIT AND EXPLICIT)
+
+EXECUTE AS USER = 'EDDYFINDT\Josh_Goertzen'
+SELECT SUSER_SNAME()
+
+SELECT name COLLATE Latin1_General_CI_AI, type_desc COLLATE Latin1_General_CI_AI
+FROM [sys].[database_principals]
+WHERE [type] in ('R','G') AND is_member(name) = 1
+ORDER BY 2
+
+REVERT
+GO
+
+---------------------------- View DATABASE ROLES granted DIRECTLY to user (EXCLUDES IMPLICIT grants through roles, permissions, etc)
+
+-- Run these query on a specified database you want to look at
+
+
+SELECT r.name role_principal_name, 
+   m.name AS member_principal_name
+FROM sys.database_role_members rm 
+JOIN sys.database_principals r 
+   ON rm.role_principal_id = r.principal_id
+JOIN sys.database_principals m 
+   ON rm.member_principal_id = m.principal_id
+WHERE m.name = USER
+
+-------------- DATABASE PERMISSIONS AND ROLES granted DIRECTLY to user (exludes roles and permissions granted through roles, user groups, etc)
+
+DECLARE @User VARCHAR(100) = 'EDDYFINDT\Debra_Carrobourg'
+SELECT p1.name UserName, p1.type_desc UserType, p1.default_schema_name UserDefaultSchema,
+	  'Database Permission' PermissionType, permission_name COLLATE SQL_Latin1_General_CP1_CI_AS  AS Permission 
+FROM sys.database_permissions pm
+JOIN sys.database_principals p1 ON pm.grantee_principal_id = p1.principal_id
+JOIN sys.database_principals p2 ON pm.grantor_principal_id = p2.principal_id
+WHERE p1.name = @User
+UNION
+SELECT p2.name UserName, p2.type_desc UserType, p2.default_schema_name UserDefaultSchema,
+	  'Database Role' PermissionType, p1.name COLLATE SQL_Latin1_General_CP1_CI_AS Role
+FROM sys.database_role_members rm
+JOIN sys.database_principals p1
+ON p1.principal_id = rm.role_principal_id
+JOIN sys.database_principals p2 ON p2.principal_id = rm.member_principal_id
+--JOIN sys.database_permissions pm ON pm.grantee_principal_id = rm.role_principal_id
+WHERE p2.name = @User
+
+------------------ view list of all users assigned to database roles (DOES NOT WORK)
+
+SELECT DP1.name AS DatabaseRoleName,   
+   isnull (DP2.name, 'No members') AS DatabaseUserName   
+ FROM sys.database_role_members AS DRM  
+ RIGHT OUTER JOIN sys.database_principals AS DP1  
+   ON DRM.role_principal_id = DP1.principal_id  
+ LEFT OUTER JOIN sys.database_principals AS DP2  
+   ON DRM.member_principal_id = DP2.principal_id  
+WHERE DP1.type = 'R'
+ORDER BY DP1.name; 
+------------------------------------------- Add and Remove user to a database Role --------------------------------------------
+
+-- Add to role
+ALTER ROLE db_ddladmin ADD MEMBER [Domain\Juan] ;  
+GO 
+
+-- OR
+
+EXEC sp_addrolemember 'db_ddladmin', 'Domain\Juan'
+GO
+
+-- Remove from Roles
+
+ALTER ROLE db_ddladmin DROP MEMBER [EDDYFINDT\Adam_Shill] ;  
+
+-- OR
+
+EXEC sp_droprolemember 'db_ddladmin', 'Domain\Juan'
+GO
+
+
+###############################################################################################
+# OBJECT PRIVILEGES
+###############################################################################################
+
+---------------------------------- See which databases the current user has access to ----------------------------------
+
+-- You can combine with the Impersonate command to view server privileges for other users (Run on master db)
+
+SELECT name FROM sys.sysdatabases
+WHERE HAS_DBACCESS(name) = 1
+
+
+-- Using impersonate
+USE AdventureWorks2022;
+
+EXECUTE AS LOGIN  = 'EDDYFINDT\Josh_Goertzen'
+SELECT name FROM sys.sysdatabases
+WHERE HAS_DBACCESS(name) = 1
+REVERT
+GO
+
+---------------------------------------------- Grant User access to a database -------------------------------------------
+
+USE databaseName
+
+GRANT CONNECT TO [EDDYFINDT\Azubuike_Ossai];
+
+-------------------------------------------- Allow user to use ALTER command -----------------------------------------
+
+-- Allows user to modify (use ALTER command) on objects within a schema
+GRANT ALTER ON SCHEMA :: gas TO [EDDYFINDT\Ufuoma_Ikporo]
+
+---------------------------------------------- Allow user to create tables in another user schema ---------------
+
+-- This is not recommended as generally you never want a user to be able to create objects that will be owned by a different
+	user especially a privileged user (ALTER permissions gives user ability to SELECT, INSERT, UPDATE and DELETE rows in any table owned by the owner of that schema)
+
+GRANT CREATE TABLE TO DBBackupuser
+GRANT ALTER ON SCHEMA::dbo TO DBBackupuser
+
+----------------- Tranfers ownership of an move (move object to different schema) -----------------------
+
+ALTER SCHEMA HumanResources TRANSFER Person.Address;
+
+------------------------------------- Permission for Stored Procedures --------------------
+
+-- Allows a user to use any current or future existing stored procedures on the "dbo" schema
+
+GRANT EXECUTE ON SCHEMA::dbo
+    TO [EDDYFINDT\Azubuike_Ossai];  
+	
+-- Grant execute on a stored procedure
+GRANT EXECUTE ON OBJECT::schemaName.StoredProcName  
+    TO Recruiting11;
+	
+-- Allows a user to create stored procedures
+GRANT CREATE PROCEDURE TO [EDDYFINDT\Azubuike_Ossai];
+	
+

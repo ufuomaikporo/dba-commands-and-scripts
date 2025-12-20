@@ -1,0 +1,178 @@
+SELECT 'ALTER TABLE ' || table_name || CHR(10) ||
+                    ' DROP CONSTRAINT ' || fk_name  AS drop_constraint
+            FROM
+            (SELECT ac.constraint_name fk_name, 
+                    ac.table_name,
+                    acc.column_name,
+                    ac.r_constraint_name,
+                    ref.table_name ref_table,
+                    ref.column_name ref_column
+            FROM user_constraints ac
+            JOIN user_cons_columns acc
+                ON (ac.constraint_name = acc.constraint_name)
+                    AND (ac.owner = acc.owner)
+            JOIN user_cons_columns ref
+                ON (ac.r_constraint_name = ref.constraint_name)
+                    AND (ac.r_owner = ref.owner)
+            WHERE ac.constraint_type = 'R'
+                AND ref.table_name = 'LISTDOMAIN'
+                AND ref.column_name = 'ID' 
+                );
+
+
+CREATE TABLESPACE ETP_IRASV6_DE_TEST2_OWNR
+DATAFILE 'C:\APP\ORACLE\ORADATA\ORCL\ETP_IRASV6_DE_TEST2_OWNR.DBF' SIZE 10G
+AUTOEXTEND ON NEXT 1G MAXSIZE G
+select count(*) from (
+SELECT ac.constraint_name fk_name, 
+                                    ac.table_name,
+                                    acc.column_name,
+                                    ac.r_constraint_name
+                            FROM user_constraints ac
+                            JOIN user_cons_columns acc
+                                ON (ac.constraint_name = acc.constraint_name)
+                                    AND (ac.owner = acc.owner)
+                            JOIN user_cons_columns ref
+                                ON (ac.r_constraint_name = ref.constraint_name)
+                                    AND (ac.r_owner = ref.owner)
+                            WHERE ac.constraint_type = 'R'
+                                AND ref.table_name = UPPER('HydroTest')
+                                AND ref.column_name = 'SOURCEID' 
+                            )
+
+        SELECT COUNT(*) 
+        FROM ListDomain 
+        WHERE UPPER(Code) = UPPER('Deformation') 
+            AND DomainCatalogId = (SELECT Id FROM DomainCatalog WHERE UPPER(DomainDescr) = UPPER('Mechanical Damage Defect Type') AND rownum = 1)
+
+SET LIN 200
+SET PAGESIZE 100
+COLUMN constraint_name FORMAT A30
+COLUMN table_name FORMAT A20
+COLUMN column_name FORMAT A22
+COLUMN constraint_type FORMAT A15
+
+SELECT uc.table_name, 
+       uc.constraint_name, 
+       uc.constraint_type,
+       ucc.column_name,
+       uc.status
+FROM user_cons_columns ucc, user_constraints uc
+WHERE ucc.constraint_name = uc.constraint_name
+AND ucc.OWNER = 'ETP_IRASV6_DE_TEST2_OWNR'
+AND uc.table_name = 'LISTDOMAIN'
+AND uc.constraint_type = 'P'
+ORDER BY uc.table_name;
+
+----------------------------------------
+
+select count(*) from
+(
+SELECT ac.constraint_name fk_name, 
+                    ac.owner cons_owner,
+                    ac.table_name,
+                    acc.column_name,
+                    ac.r_constraint_name,
+                    ac.r_owner as ref_owner,
+                    ref.table_name ref_table,
+                    ref.column_name ref_column
+                FROM all_constraints ac
+                JOIN all_cons_columns acc
+                    ON (ac.constraint_name = acc.constraint_name)
+                        AND (ac.owner = acc.owner)
+                JOIN all_cons_columns ref
+                    ON (ac.r_constraint_name = ref.constraint_name)
+                        AND (ac.r_owner = ref.owner)
+                WHERE ac.constraint_type = 'R'
+                    AND ac.r_owner = USER
+                    AND ref.table_name = 'LISTDOMAIN'
+                    AND ref.column_name = 'ID' );
+
+--select dbversion, dbversioncheckpoint from versioninfo;
+
+select count(*) from listdomain;
+
+select min(id) from listdomain;
+
+
+  COUNT(*)
+----------
+       464
+
+
+
+ DBVERSION DBVERSIONCHECKPOINT
+---------- -------------------
+    640007                   2
+
+
+
+  COUNT(*)
+----------
+     84097
+
+
+   MIN(ID)
+----------
+
+269
+242
+238
+
+set pages 1000
+select id, 
+DOMAINCATALOGID, 
+code, 
+descr,
+lastmoddatetime
+from listdomain where DOMAINCATALOGID in (238, 242, 269);
+
+       SELECT DomainCatalogId, columnname, tablename
+        FROM DomainCatalogColXRef 
+        WHERE UPPER(TableName) = UPPER('MetalLoss' )
+        AND UPPER(ColumnName) = UPPER('MetalLossTypeDomainId');
+
+ SELECT DomainCatalogId, columnname, tablename
+        FROM DomainCatalogColXRef 
+        WHERE TableName = 'ExcavationSiteCrackAnomaly' 
+        AND ColumnName = 'ESCATypeDomainId'
+
+SELECT DomainCatalogId, columnname, tablename
+        FROM DomainCatalogColXRef 
+        WHERE TableName = 'MechanicalDamage' 
+        AND ColumnName = 'MechDmgDefectTypeDomainId'
+
+
+column columnname format a35
+column tablename format a35
+     SELECT columnname, tablename
+        FROM ListDomain ld 
+        Join DomainCatalogColXRef x on x.DomainCatalogId = ld.DomainCatalogId AND ld.Code in  ('Unknown')
+        WHERE x.DomainCatalogId = 269
+
+column columnname format a35
+column tablename format a35
+SELECT x.DomainCatalogId, columnname, tablename, ld.code
+FROM ListDomain ld 
+JOIN DomainCatalogColXRef x on x.DomainCatalogId = ld.DomainCatalogId AND ld.code in ('Unknown')
+    WHERE UPPER(x.TableName) IN (UPPER('ExcavationSiteCrackAnomaly'), UPPER('MechanicalDamage'), UPPER('metalloss')) 
+    AND UPPER(x.ColumnName) LIKE UPPER('%TypeDomainId');
+
+
+ SELECT COUNT(Id)
+        FROM ListDomain 
+        WHERE DomainCatalogId = 269 AND Code = '25'
+
+  INSERT INTO ListDomain (Id, DomainCatalogId, Code, Descr) 
+            VALUES (6101022, 269, '25', '25');
+
+set lin 150
+column tablename format a30
+column columnname format a25
+column code format a25
+        SELECT x.DomainCatalogId, columnname, tablename
+        FROM ListDomain ld 
+        JOIN DomainCatalogColXRef x ON x.DomainCatalogId = ld.DomainCatalogId   
+            AND UPPER(ld.Code) IN  ('25', 'OTHER')
+        WHERE UPPER(x.TableName )IN (UPPER('ExcavationSiteCrackAnomaly'), UPPER('MechanicalDamage'), UPPER('metalloss')) 
+            AND UPPER(x.ColumnName) LIKE UPPER('%TypeDomainId');

@@ -1,0 +1,112 @@
+# Name: DeleteFeatureClass.py
+# Description: Delete featureclass.
+
+# Import system modules
+import arcpy
+import getopt
+import os
+import sys
+import time
+import logging
+
+def main(argv):
+    HELP = 'DeleteFeatureClass.py -p <platform> -s <server> -f <featureClass> -d <database> -a <authentication> -u <username> -w <password> -v <version> -l <logFileName> -g <featureDataSet> -t <tmpFolder>'
+    DEFAULT = '#'
+    DATABASE = 'DATABASE_AUTH'
+    OSA = 'OPERATING_SYSTEM_AUTH'
+
+    platform = 'SQL_SERVER'
+    server = ''
+    database = ''
+    authentication = OSA
+    username = DEFAULT
+    password = DEFAULT
+    version = 'dbo.DEFAULT'
+    featureClass = ''
+    tmpFolder = r'C:\Temp'
+    SDEFilename = r'SDEFile.sde'
+    featureDataSet = ''
+    
+    startTime = time.time()
+
+    try:
+        opts, args = getopt.getopt(argv, "hp:s:f:d:a:u:w:v:l:g:t:", ["platform=", "server=", "featureClass=", "database=", "authentication=", "username=", "password=", "version=", "logFileName=", "featureDataSet=", "tmpFolder="])
+    except getopt.GetoptError:
+        print(HELP)
+        sys.exit(2)
+
+    for opt, arg in opts:
+        if opt == '-h':
+            print(HELP)
+            sys.exit()
+        elif opt in ("-p", "--platform"):
+            platform = arg
+        elif opt in ("-s", "--server"):
+            server = arg
+        elif opt in ("-f", "--featureClass"):
+            featureClass = arg
+        elif opt in ("-d", "--database"):
+            database = arg
+        elif opt in ("-a", "--authentication"):
+            inputauth = arg
+            if inputauth == 'database':
+                authentication = DATABASE
+        elif opt in ("-u", "--username"):
+            inputuser = arg
+            if inputuser != '':
+                username = inputuser
+        elif opt in ("-w", "--password"):
+            inputpass = arg
+            if inputpass != '':
+                password = inputpass
+        elif opt in ("-v", "--version"):
+            inputversion = arg
+            if inputversion != '':
+                version = inputversion
+        elif opt in ("-l", "--logFileName"):
+            logFileName = arg
+        elif opt in ("-g", "--featureDataSet"):
+            featureDataSet = arg
+        elif opt in ("-t", "--tmpFolder"):
+            tmpFolder = arg
+
+    FORMAT = '%(asctime)s - %(message)s'
+    logging.basicConfig(filename=logFileName, level=logging.INFO, format=FORMAT)
+    logging.info('Started to run ' + __file__)
+    logging.info('Parameter "tmpFolder" = ' + tmpFolder)
+    logging.info('Parameter "SDEFilename" = ' + SDEFilename)
+    logging.info('Parameter "featureClass" = ' + featureClass)
+    logging.info('Parameter "platform" = ' + platform)
+    logging.info('Parameter "server" = ' + server)
+    logging.info('Parameter "database" = ' + database)
+    logging.info('Parameter "authentication" = ' + authentication)
+    logging.info('Parameter "username" = ' + username)
+    logging.info('Parameter "version" = ' + version)
+    logging.info('Parameter "logFileName" = ' + logFileName)
+    logging.info('Parameter "tmpFolder" = ' + tmpFolder)
+
+    # if os.path.exists(tmpFolder + r"/" + SDEFilename):
+    #     #delete the existing file
+    #     os.remove(tmpFolder + r"/" + SDEFilename)
+
+    # arcpy.management.CreateDatabaseConnection(tmpFolder, SDEFilename, platform, server, authentication, username, password, DEFAULT, database, DEFAULT, DEFAULT, version)
+
+    if len(featureDataSet) != 0:
+        arcpy.env.workspace = os.path.join(tmpFolder, SDEFilename, featureDataSet)
+        logging.info('Parameter "featureDataSet" = ' + featureDataSet)
+    else:
+        arcpy.env.workspace = os.path.join(tmpFolder, SDEFilename)
+    
+    #arcpy.Copy_management(os.path.join(tmpFolder, SDEFilename, fromFeatureClass), os.path.join(tmpFolder, SDEFilename, toFeatureClass))
+
+    try:
+        arcpy.Delete_management(featureClass)
+    except arcpy.ExecuteError:
+         logging.info(arcpy.GetMessages(2))
+        
+    TimeElapes = time.time() - startTime
+
+    logging.info('End to run ' + __file__ + ' with elapsed time of ' + str(TimeElapes) + 'seconds')
+
+if __name__ == "__main__":
+    main(sys.argv[1:])    

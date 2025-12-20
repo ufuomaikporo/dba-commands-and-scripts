@@ -1,0 +1,11 @@
+SELECT LL.Id, LL.LineName, LL.LineAltName, LL.LineLoopTypeLd, LL.LineLoopStatusLd, LL.LineLoopProdTypeLd,
+														MIN(SS.BeginStationNum * MLVC1.MultiplierNum + MLVC1.FactorNum) AS StartChainage,
+														MAX(SS.EndStationNum * MLVC1.MultiplierNum + MLVC1.Factornum) AS EndChainage
+													FROM LineLoop ll
+														INNER JOIN StationSeries ss on ss.LineLoopId = ll.Id
+														INNER JOIN MLVCorrection MLVC1 on mlvc1.StationSeriesId = ss.id
+														INNER JOIN MLVCorrection MLVC2 on mlvc2.StationSeriesId = ss.id
+													WHERE SS.EffectiveEndDate IS NULL 
+														AND MLVC1.EffectiveEndDate IS NULL 
+														AND MLVC2.EffectiveEndDate IS NULL
+													GROUP BY LL.Id, LL.LineName, LL.LineAltName, LL.LineLoopTypeLd, LL.LineLoopStatusLd, LL.LineLoopProdTypeLd

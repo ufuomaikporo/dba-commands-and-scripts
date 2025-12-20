@@ -1,0 +1,17 @@
+########################################################################
+MOVE DATA BETWEEN AZURE AND ON-PREMISES DATABASE (FOR AZURE SQL DATABASE)
+########################################################################
+
+OPTION 1) Export and Import a database
+
+1. Set up Azure firewall in the Azure Portal to allow the client IP address for the computer you will be using to connect to both databases
+2. use SQL Server Management Studio to connect to the Azure SQL database and export the database
+	i. Right-click the database you want be export and go to >> Task >> Export Data-Tier Application 
+	ii. in the Export Data-Tier Application wizard you can choose to export the database to the local computer you've used to 
+		to connect to the Azure SQL database or to Azure blob storage 
+	iii. You can choose the tables you wish to export (default is to export all tables). the database will be exported as a ".bacpac" file
+3. Use SQL Server Management Studio to connect to the on-premises SQL Server database and import the database 
+	i. Right-click on the "Databases" folder and click on "Import Data-Tier Application"
+	ii. In the Import Data-Tier Application wizard you can choose to import from your local disk or from Aure blob storage
+	iii. You can choose the database name, data file and log file locations for the database that will be created
+ 

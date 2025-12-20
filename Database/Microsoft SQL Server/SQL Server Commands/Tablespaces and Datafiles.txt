@@ -1,0 +1,244 @@
+#####################################################################################################
+# DATABASE FILES
+#####################################################################################################
+
+----------------------------------------- Get space on disk drives --------------------------------------
+
+SELECT DISTINCT l.volume_mount_point
+	,l.logical_volume_name
+	,l.file_system_type
+    ,l.total_bytes/1024/1024/1024 AS Total_GB
+	,(l.total_bytes - l.available_bytes)/1024/1024/1024 AS Used_GB
+    ,l.available_bytes/1024/1024/1024 AS Available_GB
+    ,((l.available_bytes) *100/(l.total_bytes)) as FreeSpace_percent
+	,l.supports_compression
+	,l.is_compressed
+	,l.is_read_only
+FROM
+    sys.master_files AS f
+CROSS APPLY
+    sys.dm_os_volume_stats(f.database_id, f.file_id ) l
+ORDER BY 5;
+	
+------------------------------------ GET Database Size -------------------------------------------
+
+-- Get size of logifle and data 
+SELECT 
+      database_name = DB_NAME(database_id)
+    , Logfile_mb = CAST(SUM(CASE WHEN type_desc = 'LOG' THEN size END) * 8. / 1024 AS DECIMAL(8,2))
+    , Datafile_mb = CAST(SUM(CASE WHEN type_desc = 'ROWS' THEN size END) * 8. / 1024 AS DECIMAL(8,2))
+    , TotalSize_mb = CAST(SUM(size) * 8. / 1024 AS DECIMAL(8,2))
+FROM sys.master_files WITH(NOWAIT)
+GROUP BY database_id 
+ORDER BY 4 DESC
+
+------------------------------------- find info on amount of space used in data files ----------------------------
+
+USE DBNAME
+
+SELECT
+      name
+    , filename
+    , CONVERT(decimal(12,2),ROUND(a.size/128.000,2)) as FileSizeMB
+    , CONVERT(decimal(12,2),ROUND(FILEPROPERTY(a.name,'SpaceUsed')/128.000,2)) as SpaceUsedMB
+    , CONVERT(decimal(12,2),ROUND((a.size-FILEPROPERTY(a.name,'SpaceUsed'))/128.000,2)) as FreeSpaceMB
+	, CONVERT(decimal(12,2),((a.size-FILEPROPERTY(a.name,'SpaceUsed'))/128.000)/(a.size/128.000) * 100) PercentFreeSpace
+FROM dbo.sysfiles a
+
+---------------------------- Show information about size, free space, last database backups for each DB  -----------------------------
+
+IF OBJECT_ID('tempdb.dbo.#space') IS NOT NULL
+    DROP TABLE #space
+
+CREATE TABLE #space (
+      database_id INT PRIMARY KEY
+    , data_used_size DECIMAL(18,2)
+    , log_used_size DECIMAL(18,2)
+)
+
+DECLARE @SQL NVARCHAR(MAX)
+
+SELECT @SQL = STUFF((
+    SELECT '
+    USE [' + d.name + ']
+    INSERT INTO #space (database_id, data_used_size, log_used_size)
+    SELECT
+          DB_ID()
+        , SUM(CASE WHEN [type] = 0 THEN space_used END)
+        , SUM(CASE WHEN [type] = 1 THEN space_used END)
+    FROM (
+        SELECT s.[type], space_used = SUM(FILEPROPERTY(s.name, ''SpaceUsed'') * 8. / 1024)
+        FROM sys.database_files s
+        GROUP BY s.[type]
+    ) t;'
+    FROM sys.databases d
+    WHERE d.[state] = 0
+    FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, '')
+
+EXEC sys.sp_executesql @SQL
+
+SELECT
+      d.database_id
+    , d.name
+    , d.state_desc AS State
+    , d.recovery_model_desc AS RecoveryMOdel
+    , t.total_size AS TotalDBSize_MB
+    , t.data_size AS DataFileSize_MB
+    , s.data_used_size AS UsedDataFileSize_MB
+	, CONVERT(DECIMAL(12,0),(t.data_size - s.data_used_size)/t.data_size * 100) DataFilePercentFree
+    , t.log_size AS LogFileSize_MB
+    , s.log_used_size AS UsedLogFileSize_MB
+	, CONVERT(DECIMAL(12,0), (t.log_size - s.log_used_size)/t.log_size * 100) LogFilePercentFree
+    , bu.full_last_date AS LastFullBckpDate
+    , bu.full_size AS FullBkpSize_MB
+    , bu.log_last_date AS LastLogBckpDate
+    , bu.log_size AS LogBckpSize_MB
+--INTO ##DatabaseSpace
+FROM (
+    SELECT
+          database_id
+        , log_size = CAST(SUM(CASE WHEN [type] = 1 THEN size END) * 8. / 1024 AS DECIMAL(18,2))
+        , data_size = CAST(SUM(CASE WHEN [type] = 0 THEN size END) * 8. / 1024 AS DECIMAL(18,2))
+        , total_size = CAST(SUM(size) * 8. / 1024 AS DECIMAL(18,2))
+    FROM sys.master_files
+    GROUP BY database_id
+) t
+JOIN sys.databases d ON d.database_id = t.database_id
+LEFT JOIN #space s ON d.database_id = s.database_id
+LEFT JOIN (
+    SELECT
+          database_name
+        , full_last_date = MAX(CASE WHEN [type] = 'D' THEN backup_finish_date END)
+        , full_size = MAX(CASE WHEN [type] = 'D' THEN backup_size END)
+        , log_last_date = MAX(CASE WHEN [type] = 'L' THEN backup_finish_date END)
+        , log_size = MAX(CASE WHEN [type] = 'L' THEN backup_size END)
+    FROM (
+        SELECT
+              s.database_name
+            , s.[type]
+            , s.backup_finish_date
+            , backup_size =
+                        CAST(CASE WHEN s.backup_size = s.compressed_backup_size
+                                    THEN s.backup_size
+                                    ELSE s.compressed_backup_size
+                        END / 1048576.0 AS DECIMAL(18,2))
+            , RowNum = ROW_NUMBER() OVER (PARTITION BY s.database_name, s.[type] ORDER BY s.backup_finish_date DESC)
+        FROM msdb.dbo.backupset s
+        WHERE s.[type] IN ('D', 'L')
+    ) f
+    WHERE f.RowNum = 1
+    GROUP BY f.database_name
+) bu ON d.name = bu.database_name
+ORDER BY t.total_size DESC
+
+
+------------------------------------- Find space used by tables ------------------------------------
+
+---------------OPTION 1)
+
+SELECT 
+    t.name AS TableName,
+    s.name AS SchemaName,
+    p.rows,
+    CAST(ROUND(((SUM(a.total_pages) * 8) / 1000.00), 2) AS NUMERIC(36, 2)) AS TotalSpaceMB,
+    CAST(ROUND(((SUM(a.used_pages) * 8) / 1000.00), 2) AS NUMERIC(36, 2)) AS UsedSpaceMB, 
+    CAST(ROUND(((SUM(a.total_pages) - SUM(a.used_pages)) * 8) / 1000.00, 2) AS NUMERIC(36, 2)) AS UnusedSpaceMB
+FROM 
+    sys.tables t
+INNER JOIN      
+    sys.indexes i ON t.object_id = i.object_id
+INNER JOIN 
+    sys.partitions p ON i.object_id = p.object_id AND i.index_id = p.index_id
+INNER JOIN 
+    sys.allocation_units a ON p.partition_id = a.container_id
+LEFT OUTER JOIN 
+    sys.schemas s ON t.schema_id = s.schema_id
+WHERE 
+    t.name NOT LIKE 'dt%' 
+    AND t.is_ms_shipped = 0
+    AND i.object_id > 255 
+GROUP BY 
+    t.name, s.name, p.rows
+ORDER BY 
+    TotalSpaceMB DESC, t.name
+	
+-----------------------OPTION 2)
+
+EXEC sp_spaceused N'dbo.MonteCarlo_Crack';
+
+
+---------------------------------------------- Shrink database -------------------------------------------
+
+-- Sometimes runs faster if you put the database in single-user mode
+DBCC SHRINKDATABASE (tempdb, <target_percent>);
+
+------------------------------------- Shrink data files --------------------------------------------
+
+-- An advantage of DBCC SHRINKFILE is that it can reduce the size of a file to a size that is smaller than its original size. 
+-- You can issue DBCC SHRINKFILE on any of the data or log files. You can't make the database smaller than the size of the model database.
+
+USE tempdb;
+GO
+
+-- This command shrinks the primary data file
+DBCC SHRINKFILE (tempdev, <target_size_in_MB>);
+GO
+
+-- This command shrinks the log file, examine the last paragraph.
+DBCC SHRINKFILE (templog, '<target_size_in_MB>');
+GO
+
+----------------------------------------- ALTER Database Datafile size -----------------------------
+
+ALTER DATABASE AdventureWorks2022 MODIFY FILE (NAME = 'logical_file_name', SIZE = 200MB);
+
+------------------------------------------- Move File ---------------------------
+
+USE [master];
+GO
+
+-- 1) Disconnect all existing session.
+ALTER DATABASE ARAMCO_IRASv6_CONFIG_6_4_2 SET SINGLE_USER WITH ROLLBACK IMMEDIATE
+GO
+-- 2) Take the Database Offline
+ALTER DATABASE ARAMCO_IRASv6_CONFIG_6_4_2 SET OFFLINE
+
+-- 3) Move Database
+ALTER DATABASE ARAMCO_IRASv6_CONFIG_6_4_2 MODIFY FILE (NAME = DRAS_IRAS_CONFIG_NEW, FILENAME = 'D:\SQLDATA\ARAMCO_IRASv6_CONFIG.mdf')
+
+-- 4) Take the Database Online
+ALTER DATABASE ARAMCO_IRASv6_CONFIG_6_4_2 SET ONLINE
+
+-- 5) Set the database to multi-user mod
+ALTER DATABASE ARAMCO_IRASv6_CONFIG_6_4_2 SET MULTI_USER
+
+##############################################################################################
+#TEMPDB 
+##############################################################################################
+
+https://www.sqlservercentral.com/articles/re-size-tempdb-files
+https://www.sqlshack.com/monitoring-sql-server-tempdb-with-dynamic-management-views/
+
+The tempb db has 1 primary datafile, several secondary datafiles and a logfile
+
+NOTE** 
+Do not shrink tempdb or datafiles when user activity is high. Doing so may disrupt user activity ("Worktables that hold intermediate results created during query processing and sorting.") happening inside TempDB at the time but may also abort the shrink operation altogether. However, if user activity is minimal or none then you can shrink the database
+
+You may need the reboot the SQL Server engine to relinquish tempdb space (tempdb is re-created on database engine startup)
+
+--------------------------------------- Get space used by tempdb -------------------------------------
+
+--OPTION 1)
+
+SELECT DB_NAME(database_id)DBName, name logical_filename, physical_name, size * 8/1024 SIZE_MB
+FROM MASTER.sys.master_files
+WHERE DB_NAME(database_id) in ('tempdb')
+
+---OPTION 2)
+
+SELECT 
+(SUM(unallocated_extent_page_count)*1.0/128) AS [Free space(MB)]
+,(SUM(version_store_reserved_page_count)*1.0/128)  AS [Used Space by VersionStore(MB)]
+,(SUM(internal_object_reserved_page_count)*1.0/128)  AS [Used Space by InternalObjects(MB)]
+,(SUM(user_object_reserved_page_count)*1.0/128)  AS [Used Space by UserObjects(MB)]
+FROM tempdb.sys.dm_db_file_space_usage;

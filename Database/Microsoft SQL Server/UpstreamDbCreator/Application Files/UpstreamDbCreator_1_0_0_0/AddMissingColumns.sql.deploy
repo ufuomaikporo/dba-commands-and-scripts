@@ -1,0 +1,43 @@
+DECLARE @sql nvarchar(max)
+DECLARE @sql2 nvarchar(max)
+DECLARE @sqlStatement nvarchar(max)
+
+DECLARE s_cursor CURSOR FOR
+	SELECT cs.Script FROM dbo.ColumnScripts cs
+	WHERE cs.Script LIKE '%ALTER TABLE \[dbo].\[StationSeries]%' ESCAPE '\'
+
+OPEN s_cursor
+
+	FETCH NEXT FROM s_cursor INTO @sql
+
+	WHILE @@FETCH_STATUS = 0
+	BEGIN
+		SET @sql2 = replace(@sql, ' GO ', '#')
+
+		DECLARE t_cursor CURSOR FOR
+			SELECT value FROM STRING_SPLIT(@sql2, '#');
+
+		OPEN t_cursor
+			FETCH NEXT FROM t_cursor INTO @sqlStatement
+
+			WHILE @@FETCH_STATUS = 0
+			BEGIN
+				IF @sqlStatement LIKE '%trigger%'
+				BEGIN
+					INSERT INTO TriggerScripts (Script) VALUES (@sqlStatement)
+				END
+				ELSE
+				BEGIN
+					EXEC sp_executesql @sqlStatement
+				END
+				FETCH NEXT FROM t_cursor INTO @sqlStatement
+			END
+
+		CLOSE t_cursor
+		DEALLOCATE t_cursor
+
+		FETCH NEXT FROM s_cursor INTO @sql
+	END
+
+CLOSE s_cursor
+DEALLOCATE s_cursor

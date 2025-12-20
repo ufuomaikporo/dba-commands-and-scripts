@@ -1,0 +1,378 @@
+=###########################################################################################
+Regular Expressions
+###########################################################################################
+
+-- Regular expressions can be used for text matching or pattern matching 
+  for example when using "grep" or "rename" commands
+
+-----------------------------------Basic Matching--------------------------------------
+
+-- Match a single letter by prefixing it with the "." symbol
+
+ls | grep .u  
+
+-- Use "\d" to match a single digit from 0-9. Must use "-P" switch with grep command
+
+ls | grep -P "\d"
+
+-- Use "\D" to match a single character that is not a digit
+
+-- Use "\w" to match a word character or a string, which contains any combination of leters, 
+   numbers, and or the underscore ("_") symbol. a match could also contain special
+   characters besides alphanumeric characters and underscore
+
+-- Use "\W" to match a string that contains atleast one character that is not
+   a a word character (ie a word that contains a character that is not alphanumeric
+   character or an underscore symbol such as ".","*","-","=")
+
+-- Use \t to match a tab character
+-- Use \r to match a return character
+-- Use \n to match a new line character
+-- Use \s to match a single white space character such as a space, tab, newline, 
+   carriage return, or vertical tab
+
+-- Use \S to match a single character that is not a white space character
+
+-----------------------------------Quantifiers----------------------------------------
+
+-- Use "*" to indicate that any number of the preceeding character is allowed. 
+   "te*" matches anything with the letter "t" which may or may not be followed by 
+   one or more "e"s. 
+-- Using ".*" matches a single character, a character string, or an empty string
+
+-- Use "+" to indicate the preceeding character appears one or more times. "te+"
+   matches anything that has the letter "t" followed by atleast one "e"
+-- Using ".+" returns a match if there is a non-empty string or character
+
+-- Use "?" to indicate that the preceeding character may or may not be present. "te?"
+   matches anything that has the letter "t" followed by 0 or 1 "e"
+  
+-- Use {} to specify how many times the preceeding character is repeated
+   a{12} -- matches 12 "a"s in a row  
+
+----------------------------------------Anchors---------------------------------------
+
+-- Use \b to form a word boundary. The \b causes a match if a white space exits
+   where the \b symbol is placed
+-- "\bcat\b" matches "cat" in "black cat" but not in "catatonic" or "certificate"
+-- "\bcat" matches the word "cat" in "catfish" and "catatonic"
+
+-- Use \B to match where \b does not match. so \Bcat\B would find the word "cat" in
+   "catatonic" and "certificate". It basically indicates that there are characters
+   where the \B symbol is placed
+
+-- Use ^ to indicate the beginning of a line
+-- Use $  to indicate the end of the line
+
+-----------------------------Other Regex characters------------------
+
+-- Use * to indicate that any number of the character preceeding the "*" is allowed.
+   So "test*" will match the word test followed by any number of characters. 
+
+-- Use "+" to indicate that one or more of the character preceeding the symbol
+   must be matched.
+
+-- Use "[]" to define a range. e.g [a-z] for any lower case letter between a and z.
+   use the carrot "^" within the square brackets to indicate a match outside of the 
+   specified range. [^a-g|A-G] indicates any character not between lower and uppercase 
+   'a' and 'g'
+
+-- Use "|" for disjunction (or cases). "hello|mad" will match "hello" or "mad"
+
+-- Use "()" to group a section together or to create groups of substitution
+
+-- Use [:upper:] to match upper case characters for unicode or non-english characters
+-- Use [:alpha:] for alphabet characters
+-- Use [:alnum:] to match alphanumeric (numbers and letters) characters
+-- Use [:lower:] to match lower case characters for unicode or non-english characters
+-- Use [:digit:] to match digits
+
+---------------------------------Using Rename command with Regex------------
+
+-- The following does a search and replace (s/) renaming of all files in the current 
+   directory by changing all "Mar" to "03"
+
+rename 's/Mar/03/"' *
+
+-- The following example does a search and replace and pads the first digit after the "_" 
+   with a "0". The "$" acts as a variable place holder. The "(1)" following the 
+   the "$" indicates it is a place holder for the match returned by the first regex group
+   enclosed in "()" in the regex, which is (\d). The "-n" switch allows you to get 
+   a preview of without actually doing the renaming. remove it to do the renaming
+
+rename -n 's/_(\d)032022/_0$(1)032022/' *
+
+-- The following rename command exaample changes te format for a date from 
+   "dd-mm-yyyy" to "yyyy-mm-dd". $1 indicates the first regex group that is enclosed
+   in "()", $2 indicates the second grouping, and so forth
+
+rename -n 's/(\d\d)(\d{2})(\d{4})/$3-$2-$1/' *
+
+###########################################################################
+Creating a Link
+###########################################################################
+
+-- To view the inode for a file use the "-l" switch which uses a long list format
+    (shows priveleges) and the "-i" switch which shows the index node number
+
+ls -li
+
+---------------------------Creating a Link---------------------------------
+
+-- Creates a symbolic link ("file_s") to the find file. The "-s" switch indicates
+   that it's a symbolic link. A symbolic link is like a windows shortcut and can
+   be on a different file system
+
+ln -s find find find_s
+
+-- Creates a hard link "find_h" to the find file. A symbolic link must be on the
+   same physical partition, and point to the same inode (file only)
+
+ln find find_h
+
+##########################################################################
+Physical vs Logical Hard drives
+##########################################################################
+
+--Size of files and directories within a directory
+
+ls -lh directory_path
+
+-- total disk space used by a directory or file
+
+du -sh directory
+
+--------------------Viewing information on the hard drives-----------------------------
+
+-- To view all mounted hard drives. sd is a common prefix used for hard drives
+   in linux. The prefix might be different for different systems
+
+mount | grep /dev/sd
+
+OR
+
+grep /dev/sd /etc/fstab
+
+-- to view the partitions on hard drive sda
+
+ls /dev/sda
+
+-- To view detailed information about the partitions and hard disk use the fdisk command
+   with the list "-l" option
+
+sudo fdisk -l
+
+-- The fstab is where all the configurations for your permanent mounts go. 
+   To take a look at the fstab file you can use the nano text editor. It will 
+   contain all mounted hard drives plus the swap file (similar to a page file on
+   windows for virtual memory)
+
+sudo nano /etc/fstab
+
+----------------------Adding a New Virtual or physical hard drive------------------
+
+STEP 1) Turn off the VM
+STEP 2) Go to the Storage setting for the VM and add a new storage controller 
+STEP 3) Then add a new storage attachment (hard drive). Leave it as dynamically allocated
+       to save space on the hard drive. Go though the create wizard and attach the created
+       hard drive to the VM
+
+-- View the newly created hard disk
+
+sudo fdisk -l
+
+-- View all currently mounted disks and disk info
+
+df -h
+
+-----------------------------Partition the Disk---------------------------------------
+
+-- To create partitions within the newly created disk drive  sdb, use the following command
+  and follow the interactive instructions
+
+sudo fdisk /dev/sdb
+
+-- Use "m" to view the help page with a list and description of commands
+-- Use n to add a new partition
+-- choose the primary (p) or extended (e) partition
+-- choose the partition number
+-- choose the partition starting point (first sector)
+-- choose the end point (by sector or by size)
+-- Use "i" to view created partitions
+-- Use "w" to save the created partitions and exit
+
+------------------------------Creating Swap Partitions-----------------------------------
+
+STEP 1) Change one of the created partitions to a swap partition with the fdisk command
+
+sudo fdisk /dev/sdb
+
+STEP 2) Use "l" to list known partition types. Look up Hex code for "Linux swap"
+
+STEP 3) Use 't' to change a partition type
+
+STEP 4) choose the partition number for the partition that will be changed to a swap 
+       partition
+
+STEP 5) Enter the hex code for Linux swap partition. Them use 'w' to write the change to 
+       the disk drive
+
+STEP 6) Create the swapspace on the partition. The swap space is not active and cannot be 
+        used yet
+
+sudo mkswap /dev/sdb3
+
+STEP 7) Make the swapfile configuration persistent in the fstab before mounting the swap
+        file. set the type to "swap" and the mount point to "none"
+
+-- To display active swap files
+
+sudo swapon --show
+
+-- Turn on the individual swap files or turn on all mounted swapfiles with 
+   the "-a" switch 
+
+sudo swapon /dev/sdb3
+
+OR 
+
+sudo swapon -a
+
+-- Turning off swap
+
+sudo swapoff <options> <drive_partition>
+
+-----------------------Creating a file system on the new disk drive-----------------------------
+
+-- Creating a file system for a physical volume. The hard drive type is specified by "-t"
+
+sudo mkfs -t ext4 /dev/sdb1
+
+sudo mkfs -t xfs /dev/sdb2
+
+-----------------------Making the changes persistent beyond a reboot-------------------
+
+-- To make the changes permanent so it is retained after a reboot, it needs to be added
+   to the fstab
+
+-- Turn off swap for swap files (if turned on) and unmount the drives that you want to add
+   to the fstab if they are not already mounted 
+
+sudo swapoff /dev/sdb3
+sudo umount apps
+sudo umount data
+
+-- to view the UUID and info for each partition. Copy the info to a text file
+
+sudo blkid 
+
+-- Edit the fstab by adding the information that you copied into the text file. You can
+  set the <options>, <dump>, and <pass> columns to "default", "0", and "0" for each entry.
+  Then save and esit
+
+sudo nano /etc/fstab
+
+-- Mount the file system and turn on swap files. Use the "-a" option to mount all
+
+sudo mount -a
+
+sudo swapon -a
+
+---------------------------Mounting the file system------------------------------------
+
+-- Create the mount points by creating folders to mount the disk drive to
+-- You should make the changes persistent by modifying the fstab before mounting logical
+   or physcial volumes or turning on swap
+
+mkdir -p MyProject/apps
+mkdir MyProject/data
+sudo mount /dev/sdb1 MyProject/apps
+sudo mount /dev/sdb2 MyProject/data
+
+-- To change ownership of the file system from the root user to the user sean
+
+cd /Myprojects
+sudo chown -R sean:sean *
+
+
+##########################################################################################
+Creating Physical and Logical Volumes
+##########################################################################################
+
+------------------------Creating Physical volume-------------------------
+
+-- View the view available disk drives
+
+sudo fdisk -l
+
+-- Show available physical volumes
+
+sudo pvdisplay
+
+-- Create a physical volume. You can create a physical volume on a partition of an already
+   partitioned drive
+
+sudo pvcreate /dev/sdc
+
+--------------------------Creating a volume group--------------------------
+
+-- show existing volume groups
+
+sudo vgdisplay
+
+-- Create a volume group named vg_data consisting of the physical volumes
+   /dev/sdc and /dev/sdd. Assumes the physical volumen /dev/sdd already exists
+
+sudo vgcreate vg_data /dev/sdc /dev/sdd
+
+
+------------------------Creating Logical Volumes--------------------------
+
+-- Show logical volumes
+
+sudo lvdisplay
+
+-- Creates a 4GB logical volume named lv_docs from the vg_data volume group. Use "-n"
+   to specify the name
+
+sudo lvcreate -n lv_docs --size 4G vg_data
+
+--------------------------Create a File system for the Logical volume---------------
+
+-- Creating a file system for the logical volume that was created in the previous section
+   "-t" is for the hard drive type, which is ext4
+
+sudo mkfs -t ext4 /dev/vg_data/lv_docs
+
+sudo mkfs -t ext3 /dev/vg_data/lv_pics
+
+------------------------------------Mount Volume File Systems----------------------
+
+-- Create new directories that will be the mount point for the file systems 
+
+mkdir MyDocs
+mkdir MyPics
+
+-- Add the created volumes to your fstab first as was done with the disk drive and partitions
+   so the settings are retained beyond reboots. Use blkid command to get the UUID
+
+sudo blkid
+
+sudo nano /etc/fstab
+
+-- After modifying the fstab configuration file with the commands above mount the logical volumes
+
+sudo mount /dev/vg_data/lv_pics MyPics
+sudo mount /dev/vg_data/lv_docs MyDocs
+
+-- To view the mounted logical volumes
+
+mount | grep /dev/mapper/
+
+-- You can view info about the files and change the ownership
+
+ll
+
+sudo chown -R sean:sean MyDocs MyPics
+
+

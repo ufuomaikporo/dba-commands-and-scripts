@@ -1,0 +1,295 @@
+########################################################################
+B-tree Index
+#######################################################################
+
+-- Best used on columns with high cardinality (lots of distinct values).
+   So avoid using it on low cardinality columns like gender, eye colour, 
+   hair colour, or even postal code if all customers are in Alberta 
+   (lots of repeated values)
+
+-- Most common kind of index used is b-tree index
+
+-- Use composite index if multiple columns frequently appear together in
+   WHERE clause
+
+-- The most commonly used column should be listed first in index definition
+
+-- index compression can be used to save space. This is useful when leading 
+   columns have fewer distinct values 
+
+-- Specify UNIQUE to create a unique index, otherwise a non-unique index is 
+   created
+
+CREATE UNIQUE INDEX name ON 
+                 tablename(colname1 [ASC|DESC], 
+                           colname2 [ASC|DESC],
+                           …);
+
+##########################################################################
+Less Common Index Types
+##########################################################################
+
+-----------------------------Bitmap Index-----------------------------
+
+-- Useful on large tables (lots of rows) with low cardinality (lots of 
+   repeated values)
+
+-- Specify BITMAP to create a bitmap index. Bitmap indexes are always non-unique
+
+-- Should not be used in tables that are updated frequently because of 
+   maintenance overhead (Use in DSS or Warehouse databases only)
+
+CREATE BITMAP INDEX name ON tablename(colname1, colname2, …);
+
+---------------------Function Based Index-------------------------------
+
+-- Used when functions are commonly used on table columns in the WHERE
+   clause. Functions on a column make the regular index unusable
+
+CREATE INDEX FuncIndx on Employees(UPPER(FirstName));
+
+-- The above index would be used on the following query
+
+SELECT FirstName FROM Employees WHERE FirstName = UPPER(Jones);
+
+###########################################################################
+Unusable Indexes
+###########################################################################
+
+Reasons for making an index unusable
+
+-- Not used by optimizer for execution plan
+-- Not maintained by DML
+-- ignored by bulk loads (allows faster table loading, index must be rebuilt
+   after bulk load) 
+-- It's better to mark an index as unusable than to drop and recreate it
+
+-- Mark as unusable
+	
+ALTER INDEX name UNUSABLE;
+
+-- Rebuild and mark as useable again
+	
+ALTER INDEX name REBUILD;
+
+--------------------Invisible Indexes----------------------------
+
+-- Not used by optimizer for execution plans
+-- Is maintained by DML & bulk loads
+-- Useful when testing effect of dropping an index before actually dropping
+   it
+-- To force optimizer to use invisible indexes set the following parameter
+
+OPTIMIZER_USE_INVISIBLE_INDEXES = TRUE
+
+-- Mark as invisible
+
+ALTER INDEX name INVISIBLE;
+
+-- Make visible again
+	
+ALTER INDEX name VISIBLE;
+
+#########################################################################
+Monitoring Index Usage
+#########################################################################
+
+-- All indexes (except UNUSABLE ones) must be maintained
+
+-- Indexes could possible use considerable CPU & I/O. Not all indexes 
+   are useful and therfore indexes that are not being used should be dropped
+
+-- Turn on index monitoring. Must be run over a period representative of 
+   your workload (typical day). You should take special processing times 
+   into account (month end, quarter end, year end, etc) where rarely run
+   processes may make use of otherwise unused indexes
+
+-- Be careful of required indexes not being used directly (Primary Key and 
+    Unique Indexes enforce uniqueness)
+
+-- To turn on index monitoring
+	
+ALTER INDEX name MONITORING USAGE;
+
+-- To turn off monitoring
+
+ALTER INDEX name NOMONITORING USAGE;
+
+---------------------------View Index usage--------------------------
+
+-- You can check the DBA_OBJECT_USAGE and USER_OBJECT_USAGE data dictionary
+   views
+
+COL index_name FORMAT A20
+COL table_name FORMAT A20
+
+SELECT * FROM dba_object_usage; 
+
+-- Determine the number of branch levels and leafs in an index. The blevel is the
+   number of branch levels, excluding the root (blevel=0 means you only have the
+   root node and leaf blocks)
+
+SELECT BLevel, Leaf_Blocks
+FROM User_Ind_Statistics
+WHERE Index_Name = 'NAMEDESC';
+
+--------------------Steps for Monitoring Index------------------------
+
+STEP 1) Turn on Index monitoring
+
+ALTER INDEX name MONITORING USAGE;
+
+STEP 2) run SQL statements that you want to monitor the index for (can take
+         days, weeks, or months)
+
+STEP 3) Turn off monitoring
+
+ALTER INDEX name MONITORING USAGE;
+
+STEP 4) Check the results of monitoring 
+
+SET PAGES 999 LINES 120
+COL index_name FORMAT A15
+COL table_name FORMAT A15
+
+SELECT *
+FROM User_Object_Usage
+WHERE Table_Name = 'PROGRAM'
+AND Index_Name = 'NAMEDESC'; 
+
+
+##########################################################################
+Index Maintenance
+##########################################################################
+
+-- DML activity can cause sparsely populated blocks, resulting in less 
+   entries in branch and leaf blocks, more blocks than necessary, increase
+   in the amount of IO to access data
+
+-------------------------Rebuild Index-------------------------------------
+
+-- Creates a new index from the old one
+-- Can reduce the number of branches and leaf blocks
+-- Can reduce the levels in the tree (shorter is better. level = blevel + 1)
+-- Can be performed online (index can still be used by queries) or offline
+
+-- Rebuild index online 
+		
+ALTER INDEX name REBUILD ONLINE; 
+
+-- Rebuild index offline 
+	
+ALTER INDEX name REBUILD;
+
+------------------------Index Coalesce------------------------------
+
+-- combines partially empty blocks together when they can fit into one block,
+   reducing number of leaf blocks (does not affect height of tree)
+
+-- works well when sparsely populated blocks are next to each other
+
+-- Always done online
+
+-- If very sparse, may move some rows many times which increases overhead
+
+-- If deleted leaf rows exceed 20%, then rebuild or coalesce the index. 
+   Index_stats only contains information on the last row analyzed. so if more
+   than one index needs to be analyzed you will have to run the two commands
+   for each index
+
+-- TO check if an index needs to be rebuilt
+
+ANALYZE INDEX name VALIDATE STRUCTURE;
+
+SELECT name, del_lf_rows/lf_rows * 100 “Reclaimable Space %”
+FROM Index_Stats;
+
+#########################################################################
+Index Compression
+#########################################################################
+
+-- Compression eliminates repeating data. Can be used on composite unique
+   indexes, non-unique single or composite indexes
+
+Issues with index compression
+-- Must run ANALYZE INDEX to get proper column count, which is an average and
+   may not be optimal
+-- the ANALYZE command locks the index, making the index offline
+-- it's possible to get a negative column count, meaning compression is not
+   advised 
+
+----------------------------Prefix Compression-----------------------------
+
+-- Prefix compression example for non-unique index. This will compress all 3
+   columns on the composite non-unique index
+
+CREATE INDEX sample ON
+employees (fname, minitial, lname) COMPRESS;
+
+-- You can specify the number of leading columns to compress fewer index
+   columns. In this example the fname and minitial columns are compressed
+
+CREATE INDEX Sample ON
+employee(fname, minitial, lname) COMPRESS 2;
+
+-- Prefix compression on composite unique index. The example below will compress
+   the first two columns on a unique index. Last column is never compressed.
+   You can compress less by specifying the number of leading columns
+
+CREATE UNIQUE INDEX Sample ON
+Employee(FName, MInitial, LName) COMPRESS;
+
+-- Prefix compression using the ALTER INDEX command. By default, the prefix 
+   consists of all indexed columns for non-unique indexes, and all indexed 
+   columns excluding the last one for unique indexes. You can also specify 
+   the prefix length as part of the index compression clause
+
+ALTER INDEX idxname REBUILD COMPRESS;
+
+-------------------------Advanced Compression-----------------------------
+
+-- advanced compression is a more automated approach, where oracle does the
+   heavy lifting. There are two levels (high, low)
+
+-- Compress Advanced Low serves the same function as prefix compression. The
+   following examples uses advanced compression for a non-unique and composite
+   unique index
+
+CREATE INDEX Sample ON
+Employee(FName, MInitial, LName) COMPRESS ADVANCED LOW;
+
+CREATE UNIQUE INDEX Sample ON
+Employee(FName, MInitial, LName) COMPRESS ADVANCED LOW;
+
+-- Compress Advanced High uses advanced compression techniques which can
+   significantly increase index storage. Example for composite non-unique
+   and unique index given below
+
+CREATE INDEX Sample ON
+Employee(FName, MInitial, LName) COMPRESS ADVANCED HIGH;
+
+CREATE UNIQUE INDEX Sample ON
+Employee(FName, MInitial, LName) COMPRESS ADVANCED HIGH;
+
+-- Compression can be add after index creation with the ALTER command
+
+ALTER INDEX NAME REBUILD COMPRESS #;
+
+ALTER INDEX NAME COMPRESS ADVANCED LOW;
+
+ALTER INDEX NAME COMPRESS ADVANCED HIGH;
+
+-- Remove compression with an ALTER command
+
+ALTER INDEX NAME REBUILD NOCOMPRESS;
+
+-------------------------Reverse Key Index--------------------------------
+
+-- Useful in high-insert DML situations to help reduce contention on insert
+   into index
+
+Disadvantages
+
+-- The index range scan access method cannot be used
+-- This method requires keys be physically in order in the leaf nodes
+-- Since the key values are reversed, they are spread all over!

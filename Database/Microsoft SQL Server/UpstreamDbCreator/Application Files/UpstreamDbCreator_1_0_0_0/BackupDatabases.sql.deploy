@@ -1,0 +1,97 @@
+-- This script is for backing up the databases.
+DECLARE @dbName varchar(100)
+DECLARE @reasonForBackup varchar(1000)
+DECLARE @date varchar(100)
+DECLARE @sql nvarchar(4000)
+DECLARE @backupFolder varchar(200)
+DECLARE @today datetime
+DECLARE @serverFolder varchar(100)
+DECLARE @cnt int
+DECLARE @i int
+DECLARE @logicalDataFileName varchar(200)
+DECLARE @logicalLogFileName varchar(200)
+DECLARE @dataFileName varchar(200)
+DECLARE @logFileName varchar(200)
+
+DECLARE @DatabaseList TABLE
+(
+	Id int IDENTITY(1,1),
+	DbName varchar(100)
+)
+
+INSERT INTO @DatabaseList (DbName)
+SELECT name FROM sys.databases WHERE name NOT IN ('master','tempdb','model','msdb')
+AND name IN (<FilteredDatabases>)
+
+SET @today = getdate()
+SET @i = 1
+SET @cnt = (SELECT count(*) FROM @DatabaseList)
+
+IF @cnt = 0 
+BEGIN
+	INSERT INTO @DatabaseList (DbName)
+	SELECT db_name()
+END
+
+DELETE FROM SQL2017.DrasInternal.dbo.Scripts
+
+WHILE @i <= @cnt
+BEGIN
+	SET @dbName = (SELECT DbName FROM @DatabaseList WHERE Id = @i)
+	SET @reasonForBackup = ''
+	SET @serverFolder = '<ServerName>'
+	SET @date = cast(DATENAME(MONTH, @today) AS varchar(30)) + cast(day(@today) AS varchar(5))
+	SET @backupFolder = '<BackupFolder>' + @serverFolder + '\'
+
+	SET @sql = 'BACKUP DATABASE [' + 
+	@dbName + '] TO  DISK = N''' + @backupFolder + @dbName 
+	+ '_' + @reasonForBackup + '_' + @date + '.bak'' WITH  COPY_ONLY, NOFORMAT, INIT,  NAME = N'''+ @dbName 
+	+ '-Full Database Backup'', SKIP, NOREWIND, NOUNLOAD, COMPRESSION,  STATS = 10, CHECKSUM'
+
+	EXEC sp_executesql @sql
+
+	SET @sql = 'declare @backupSetId as int
+	select @backupSetId = position from msdb..backupset where database_name=N''' + @dbName 
+	+ ''' and backup_set_id=(select max(backup_set_id) from msdb..backupset where database_name=N''' + @dbName + ''' ) 
+	if @backupSetId is null begin raiserror(N''Verify failed. Backup information for database ''''' + @dbName + ''''' not found.'', 16, 1) end
+	RESTORE VERIFYONLY FROM  DISK = N''' + @backupFolder + @dbName + '_' + @reasonForBackup + '_' + @date 
+	+ '.bak'' WITH  FILE = @backupSetId,  NOUNLOAD,  NOREWIND'
+
+	EXEC sp_executesql @sql
+
+	SELECT left(FileName, charindex('.', FileName + '.') - 1) as FileName
+	FROM (
+	SELECT db.name AS DBName, type_desc AS FileType, right(Physical_Name, charindex('\', reverse(Physical_Name) + '\') - 1) as FileName
+	FROM sys.master_files mf
+	INNER JOIN sys.databases db ON db.database_id = mf.database_id) t
+
+
+	SET @logicalDataFileName = (SELECT mf.name AS LogicalFileName
+							FROM sys.master_files mf
+							INNER JOIN sys.databases db ON db.database_id = mf.database_id
+							WHERE db.Name = @dbName AND type_desc = 'ROWS')
+
+	SET @logicalLogFileName = (SELECT mf.name AS LogicalFileName
+							FROM sys.master_files mf
+							INNER JOIN sys.databases db ON db.database_id = mf.database_id
+							WHERE db.Name = @dbName AND type_desc = 'LOG')
+
+	SET @dataFileName = (SELECT left(FileName, charindex('.', FileName + '.') - 1) as FileName
+						FROM (
+						SELECT db.name AS DBName, type_desc AS FileType, right(Physical_Name, charindex('\', reverse(Physical_Name) + '\') - 1) as FileName
+						FROM sys.master_files mf
+						INNER JOIN sys.databases db ON db.database_id = mf.database_id) t
+						WHERE FileType = 'ROWS' AND DBName = @dbName)
+
+	SET @logFileName = (SELECT left(FileName, charindex('.', FileName + '.') - 1) as FileName
+						FROM (
+						SELECT db.name AS DBName, type_desc AS FileType, right(Physical_Name, charindex('\', reverse(Physical_Name) + '\') - 1) as FileName
+						FROM sys.master_files mf
+						INNER JOIN sys.databases db ON db.database_id = mf.database_id) t
+						WHERE FileType = 'LOG' AND DBName = @dbName)
+
+	INSERT INTO SQL2017.DrasInternal.dbo.Scripts(Script)
+	select 'RESTORE DATABASE [' + @dbName + '] FROM  DISK = N''<BackupFolder>\' + @serverFolder + '\' + @dbName + '__' + @date + '.bak'' WITH  FILE = 1, MOVE N''' + @logicalDataFileName + ''' TO N''<DataFolder>' + @dataFileName + '.mdf'',  MOVE N''' + @logicalLogFileName + ''' TO N''<LogFolder>' + @logFileName + '.ldf'',  NOUNLOAD,  STATS = 5'
+
+	SET @i = @i + 1
+END

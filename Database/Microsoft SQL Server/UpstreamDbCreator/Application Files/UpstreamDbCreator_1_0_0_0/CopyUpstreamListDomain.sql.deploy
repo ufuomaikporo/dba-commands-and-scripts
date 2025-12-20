@@ -1,0 +1,48 @@
+-- This script will copy all listdomain data from one db to another for the upstream database
+DECLARE @FromDbName varchar(100)
+DECLARE @ToDbName varchar(100)
+DECLARE @TableName varchar(100)
+DECLARE @sql nvarchar(max)
+DECLARE @sqlInsertOn nvarchar(max)
+DECLARE @sqlInsertOff nvarchar(max)
+
+SET @FromDbName = '<FromDb>'
+SET @ToDbName = '<ToDb>'
+
+DECLARE selc_cursor CURSOR FOR
+	SELECT 'Insert into ' + @ToDbName + '.dbo.' + Table_Name 
+	+ '(Id, Code, Descr) Select Id, Code, Descr From ' + @FromDbName + '.dbo.' + Table_Name
+	+ ' WHERE Code NOT IN (SELECT Code FROM ' + @ToDbName + '.dbo.' + Table_Name + ')' AS sqlStatement,
+	Table_Name
+	FROM INFORMATION_SCHEMA.Columns 
+	WHERE Column_Name = 'Code' AND Table_Name NOT LIKE 'H[_]%'
+	AND Table_Name <> 'ListDomain'
+	AND table_name NOT LIKE 'tmp%'
+	AND table_name NOT IN ('RCHCAFlagType', 'RCMAOPFlagActionType', 'RCMAOPFlagProcessType', 'RCMAOPFlagReasonType', 'RCStructureCategoryType', 
+	'RiskCalculationListDomain', 'RCCSAClassCalcFlagType', 'RCCSAClassFlagType', 'RCDOTClassCalcFlagType', 'RCDOTClassFlagType', 'RCComputationType', 'RCHCAReasonType')
+
+OPEN selc_cursor
+	FETCH NEXT FROM selc_cursor INTO @sql, @TableName
+
+	WHILE @@FETCH_STATUS = 0
+	BEGIN
+		SET @sqlInsertOn = 'SET IDENTITY_INSERT ' + @ToDbName + '.dbo.' + @TableName + ' ON'
+		SET @sqlInsertOff = 'SET IDENTITY_INSERT ' + @ToDbName + '.dbo.' + @TableName + ' OFF'
+
+		SET @sql = @sqlInsertOn + ' ' + @sql + ' ' + @sqlInsertOff
+
+		begin try
+		
+		EXEC sp_executesql @sql
+		END try
+		begin catch
+		
+		SELECT @sql
+END CATCH
+		FETCH NEXT FROM selc_cursor INTO @sql, @TableName
+	END
+
+CLOSE selc_cursor
+DEALLOCATE selc_cursor
+
+GO

@@ -1,0 +1,57 @@
+BaseData Move
+- Start with Rangeland (completed), Bridger, Hess, CMH
+
+####################### CREATE AND POPULATE THE FOLLOWING TABLE IN CLIENT DB ############################
+
+IF OBJECT_ID('CustomBaseDataLayer', 'U') IS NULL
+BEGIN
+	EXECUTE ('CREATE TABLE [dbo].[CustomBaseDataLayer](
+   		[Id] [numeric](10, 0) IDENTITY(1,1) NOT NULL,
+   		[Name] [varchar](100) NOT NULL,
+   		[CreateByUserId] [varchar](45) NOT NULL,
+   		[CreateDate] [datetime] NOT NULL,
+   		[LastModByUserId] [varchar](45) NOT NULL,
+   		[LastModDate] [datetime] NOT NULL
+	) ON [PRIMARY]
+
+	ALTER TABLE [dbo].[CustomBaseDataLayer] ADD  DEFAULT (suser_sname()) FOR [CreateByUserId]
+
+	ALTER TABLE [dbo].[CustomBaseDataLayer] ADD  DEFAULT (getdate()) FOR [CreateDate]
+
+	ALTER TABLE [dbo].[CustomBaseDataLayer] ADD  DEFAULT (suser_sname()) FOR [LastModByUserId]
+
+	ALTER TABLE [dbo].[CustomBaseDataLayer] ADD  DEFAULT (getdate()) FOR [LastModDate]')
+END 
+
+IF OBJECT_ID('tu_CustomBaseDataLayer', 'TR') IS NULL
+BEGIN
+	EXECUTE ('CREATE TRIGGER [dbo].[tu_CustomBaseDataLayer] ON [dbo].[CustomBaseDataLayer] FOR UPDATE AS 
+	IF EXISTS(SELECT * FROM DELETED)
+	BEGIN
+
+ 
+
+   		UPDATE dbo.CustomBaseDataLayer
+   		SET LastModByUserId = suser_sname(), LastModDate = getdate() 
+   		FROM dbo.CustomBaseDataLayer as t, DELETED as d
+   		WHERE t.Id=d.Id;
+     
+	END
+
+	ALTER TABLE [dbo].[CustomBaseDataLayer] ENABLE TRIGGER [tu_CustomBaseDataLayer]')
+END
+
+EXECUTE ('INSERT INTO dbo.CustomBaseDataLayer ([name])
+SELECT tab.name
+FROM sys.tables tab
+JOIN sys.columns col ON tab.object_id = col.object_id
+WHERE col.name = ''OBJECTID''
+AND create_date > ''2023-05-03''') --(Change use format 'yyyy-mm-dd hh:mm:sec')
+
+
+
+
+
+
+
+

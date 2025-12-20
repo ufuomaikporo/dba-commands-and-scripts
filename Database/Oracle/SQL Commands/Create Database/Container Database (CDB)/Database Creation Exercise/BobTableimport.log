@@ -1,0 +1,39 @@
+;;; 
+Import: Release 12.2.0.1.0 - Production on Tue Mar 15 17:49:38 2022
+
+Copyright (c) 1982, 2017, Oracle and/or its affiliates.  All rights reserved.
+;;; 
+Connected to: Oracle Database 12c Enterprise Edition Release 12.2.0.1.0 - 64bit Production
+Master table "SYSTEM"."SYS_IMPORT_FULL_01" successfully loaded/unloaded
+Starting "SYSTEM"."SYS_IMPORT_FULL_01":  system/********@orclpdb DIRECTORY=ORCLPDB_DIR DUMPFILE=Scottschemaexport.dmp LOGFILE=BobTableimport.log REMAP_SCHEMA=scott:bob 
+Processing object type SCHEMA_EXPORT/USER
+ORA-31684: Object type USER:"BOB" already exists
+Processing object type SCHEMA_EXPORT/ROLE_GRANT
+Processing object type SCHEMA_EXPORT/DEFAULT_ROLE
+Processing object type SCHEMA_EXPORT/TABLESPACE_QUOTA
+Processing object type SCHEMA_EXPORT/PRE_SCHEMA/PROCACT_SCHEMA
+Processing object type SCHEMA_EXPORT/SEQUENCE/SEQUENCE
+ORA-31684: Object type SEQUENCE:"BOB"."CUSTID" already exists
+ORA-31684: Object type SEQUENCE:"BOB"."PRODID" already exists
+ORA-31684: Object type SEQUENCE:"BOB"."ORDID" already exists
+Processing object type SCHEMA_EXPORT/TABLE/TABLE
+ORA-39151: Table "BOB"."DEPT" exists. All dependent metadata and data will be skipped due to table_exists_action of skip
+ORA-39151: Table "BOB"."EMP" exists. All dependent metadata and data will be skipped due to table_exists_action of skip
+ORA-39151: Table "BOB"."BONUS" exists. All dependent metadata and data will be skipped due to table_exists_action of skip
+ORA-39151: Table "BOB"."SALGRADE" exists. All dependent metadata and data will be skipped due to table_exists_action of skip
+ORA-39151: Table "BOB"."CUSTOMER" exists. All dependent metadata and data will be skipped due to table_exists_action of skip
+ORA-39151: Table "BOB"."ORD" exists. All dependent metadata and data will be skipped due to table_exists_action of skip
+ORA-39151: Table "BOB"."ITEM" exists. All dependent metadata and data will be skipped due to table_exists_action of skip
+ORA-39151: Table "BOB"."PRODUCT" exists. All dependent metadata and data will be skipped due to table_exists_action of skip
+ORA-39151: Table "BOB"."PRICE" exists. All dependent metadata and data will be skipped due to table_exists_action of skip
+ORA-39151: Table "BOB"."TOP_DOGS" exists. All dependent metadata and data will be skipped due to table_exists_action of skip
+ORA-39151: Table "BOB"."MESSAGES" exists. All dependent metadata and data will be skipped due to table_exists_action of skip
+ORA-39151: Table "BOB"."ERRORS" exists. All dependent metadata and data will be skipped due to table_exists_action of skip
+Processing object type SCHEMA_EXPORT/TABLE/TABLE_DATA
+Processing object type SCHEMA_EXPORT/TABLE/INDEX/INDEX
+Processing object type SCHEMA_EXPORT/TABLE/CONSTRAINT/CONSTRAINT
+Processing object type SCHEMA_EXPORT/TABLE/INDEX/STATISTICS/INDEX_STATISTICS
+Processing object type SCHEMA_EXPORT/TABLE/CONSTRAINT/REF_CONSTRAINT
+Processing object type SCHEMA_EXPORT/TABLE/STATISTICS/TABLE_STATISTICS
+Processing object type SCHEMA_EXPORT/STATISTICS/MARKER
+Job "SYSTEM"."SYS_IMPORT_FULL_01" completed with 16 error(s) at Tue Mar 15 17:49:47 2022 elapsed 0 00:00:07

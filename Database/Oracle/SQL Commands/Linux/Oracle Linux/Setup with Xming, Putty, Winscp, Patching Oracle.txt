@@ -1,0 +1,118 @@
+-- find shell environment. You can use "echo $<PARAMETER>" to display info about
+   a particular parameter. The example below displays the command shell being used
+
+echo $SHELL
+
+-- View shared memory segments
+
+ipcs
+
+-- View shared memmory limits
+
+ipcs -lm
+
+-- View samaphore limits
+
+ipcs -ls
+
+##################################################################################
+XMING
+##################################################################################
+
+-- For displaying GUI-based applications on windows for Linux server interfaces
+   (such as putty) without GUIs
+
+-- To view current display output location
+
+echo $DISPLAY
+
+-- To change or add a display port 
+
+export DISPLAY=windows_ip_address:0.0
+
+
+######################################################################################
+Oracle Related
+######################################################################################
+
+---------------------------Set oracle environment--------------------------------
+
+-- Set possible options for $ORACLE_HOME in oratab file by opening the oratab file using
+   vi and making entries for each $ORACLE_HOME location 
+
+vi /etc/oratab
+
+-- The $ORACLE_HOME directory entries below creates two entries (grid, and 11gR2) in the 
+   directories specified
+
+grid:/u01/app/19.0.0/grid:N
+11gR2:/u01/app/oracle/product/11.2.0/dbhome_1:N
+
+-- to change $ORACLE_HOME environment (aka directory) enter the ". oraenv" command followed
+   by the name of an oratab entry (grid or 11gR2) when prompted
+
+. oraenv
+
+-----------------------------------Patching Oracle-----------------------------------
+
+STEP 1) Set the oracle home
+
+. oraenv
+
+STEP 2) Display current patch inventory for an oracle home
+
+ $ORACLE_HOME/OPatch/opatch lsinventory
+
+STEP 3) view OPatch version
+
+ $ORACLE_HOME/OPatch/opatch version
+
+STEP 4) open patch directory to view available patches
+
+ cd /u01/installation_media/oracle/11.2/patch/
+
+ ls -l
+
+STEP 5) Rename the current OPatch so it is saved as a backup
+
+mv OPatch Opatch.old 
+
+STEP 6) Unzip the necessary patch files from /u01/installation_media/oracle/11.2/patch/ 
+
+unzip -q /u01/installation_media/oracle/11.2/patch/p6880880_112000_Linux-x86-64.zip
+
+unzip -q /u01/installation_media/oracle/11.2/patch/p26609445_112040_Linux-x86-64.zip
+
+unzip -q p25879656_112040_Linux-x86-64.zip
+
+STEP 7) check OPatch version
+
+ $ORACLE_HOME/OPatch/opatch version
+
+STEP 8) Go into the necessary directories in cd /u01/installation_media/oracle/11.2/patch/
+       and apply the patch
+
+-- Apply first patch
+
+cd /u01/installation_media/oracle/11.2/patch/25879656/
+
+$ORACLE_HOME/OPatch/opatch napply -skip_subset -skip_duplicate
+
+-- Apply second patch
+
+cd /u01/installation_media/oracle/11.2/patch/26609445/
+$ORACLE_HOME/OPatch/opatch apply
+
+-----------------------------DBCA to Create scripts--------------------------------
+
+-- Database components to include
+
+Oracle JVM and Oracle XML DB are a must. The others are optional
+
+--------------------Check Scripts using vi
+
+-----------------Then run scripts
+
+
+
+

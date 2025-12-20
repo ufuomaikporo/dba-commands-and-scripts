@@ -1,0 +1,14 @@
+LOAD DATABASE
+	FROM mssql://test:test@10.40.112.129/DATASHARE_DQA
+	INTO postgresql://postgres:postgres@10.40.112.209/postgres
+
+INCLUDING ONLY TABLE NAMES LIKE 'PID_CrackPerKm' IN SCHEMA 'dbo'
+
+SET work_mem to '16MB', maintenance_work_mem to '512 MB'
+
+BEFORE LOAD DO $$ DROP SCHEMA IF EXISTS dbo CASCADE; $$;
+
+
+
+
+

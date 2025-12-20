@@ -1,0 +1,311 @@
+####################################################################################################
+# GET INFO
+################################################################################################
+
+---------------------------------BEST PRACTICES ---------------------------------------
+/*
+
+***DO NOT Change, update, renew or delete an encryption certificate (even if expired) if a backup was
+	performed after the certificate was created. Any backup created after a certificate has been created will require the
+	certificate for a backup restore. 
+- It is possible to have one database backupset (1 full backup + 1 or more differential backups)
+	that requires more than one encryption certificate for a complete restore if a new certificate is used to 
+	encrypt the database before one of the differential backups
+	
+1) Make sure to backup encryption certificates after creating them and using them to encrypt a database
+2) Avoid deleting encryption certificate and private key file if possible. Doing so will cause you to lose any
+	backup that was created after the certificate was in effect on the database
+3) Cannot encrypt READ ONLY databases
+4) MUST perform log backups for databases in FULL recovery model before turning on encryption
+
+*/
+-------------------------------CHECK IF A MASTER KEY EXISTS -------------------------------
+
+SELECT * FROM sys.symmetric_keys WHERE name LIKE '%DatabaseMasterKey%'
+
+---------------------------- LIST ALL ENCRYPTION CERTIFICATES ON A SERVER ---------------
+
+SELECT * FROM sys.certificates 
+
+----------------------- VARIOUS WAYS TO GET INFO ON TDE ENCRYPTED DATABASES-------------
+
+
+--Various ways to list certificates with related database encryption keys
+
+-----1) Prefered Query
+USE master
+GO
+SELECT
+d.Name AS DatabaseName,
+dek.encryption_state,
+CASE dek.encryption_state
+WHEN 0 THEN 'No database encryption key present, no encryption'
+WHEN 1 THEN 'UnEncrypted'
+WHEN 2 THEN 'Encryption in progress'
+WHEN 3 THEN 'Encrypted'
+WHEN 4 THEN 'Key change in progress'
+WHEN 5 THEN 'Decryption in progress'
+END AS encryption_state_desc,
+cer.name AS CertificateName,
+cer.expiry_date,
+dek.percent_complete,
+thumbprint
+,*
+FROM sys.databases D
+JOIN sys.dm_database_encryption_keys dek
+ON DEK.database_id = D.database_id
+JOIN sys.certificates AS cer
+ON dek.encryptor_thumbprint = cer.thumbprint
+ORDER BY 1;
+
+-----2)
+
+SELECT DB_NAME(database_id) AS database_name,
+key_algorithm,
+key_length,
+encryptor_type,
+encryptor_thumbprint
+FROM sys.dm_database_encryption_keys
+
+-----3)
+SELECT DB_NAME (e.database_id) AS DatabaseName,
+e.database_id,
+e.encryption_state,
+CASE e.encryption_state
+WHEN 0 THEN 'No database encryption key present, no encryption'
+WHEN 1 THEN 'UnEncrypted'
+WHEN 2 THEN 'Encryption in progress'
+WHEN 3 THEN 'Encrypted'
+WHEN 4 THEN 'Key change in progress'
+WHEN 5 THEN 'Decryption in progress'
+END AS encryption_state_desc,
+c.name,
+e.percent_complete
+FROM sys.dm_database_encryption_keys AS e
+LEFT JOIN master.sys.asymmetric_keys AS c
+ON e.encryptor_thumbprint = c.thumbprint
+
+----4)
+SELECT
+d.name,
+d.is_encrypted,
+dek.encryption_state,
+dek.percent_complete,
+dek.key_algorithm,
+dek.key_length
+FROM
+sys.databases as d
+INNER JOIN sys.dm_database_encryption_keys AS dek
+ON d.database_id = dek.database_id
+
+#####################################################################################################
+# RESTORE TDE ENCRYPTED DATABASE
+#####################################################################################################
+/*
+If a new encryption certificate has been created to replace an older one 
+-a backup needs to be performed after the certificate creation for the new certificate to take effect.
+- For databases in FULL recovery model a log backup needs to be taken before turning on encryption
+*/
+------------------STEP 1) Identify all affected objects 
+
+Use master
+GO
+SELECT    name,DEK.*
+FROM      sys.databases D
+JOIN      sys.dm_database_encryption_keys DEK
+ON        DEK.database_id = D.database_id
+ORDER BY  name
+
+-------------STEP 2) Create a Master Key in the Destination Server (There can only be one master key per server)
+
+IF NOT EXISTS (SELECT * FROM sys.symmetric_keys WHERE name LIKE '%DatabaseMasterKey%')
+BEGIN
+	CREATE MASTER KEY ENCRYPTION BY PASSWORD ='Fs9f4fkg93sdjk'
+END 
+
+-- To change the master key password
+
+ALTER MASTER KEY REGENERATE WITH ENCRYPTION BY PASSWORD = 'password'
+
+-----------------STEP 3) Backup Encryption Certificate From Source DB Server ####################
+
+-- this creates the encryption certificate prviate key and certificate file
+
+use master
+go
+BACKUP CERTIFICATE CertificateName
+TO FILE = '\\backups.cgy.dynamicrisk.net\db_backups_nightly\temporary backups\sql2012\CertificateName.cer'
+WITH PRIVATE KEY(
+FILE = '\\backups.cgy.dynamicrisk.net\db_backups_nightly\temporary backups\sql2012\CertificateName.prvk',
+ENCRYPTION BY PASSWORD = 'Fs9f4fkg93sdjk'
+)
+
+----------------------------STEP 4 (DESTINATION)Create Certificate from Certificate backup on the Destination DB Server
+
+CREATE CERTIFICATE CertificateName
+FROM FILE = '\\backups.cgy.dynamicrisk.net\DB_Backups_Nightly\Temporary Backups\SQL2012\CertificateName.cer'
+WITH PRIVATE KEY(
+FILE = '\\backups.cgy.dynamicrisk.net\DB_Backups_Nightly\Temporary Backups\SQL2012\CertificateName.prvk',
+DECRYPTION BY PASSWORD = 'Fs9f4fkg93sdjk'
+)
+
+------------------- STEP 5) Move Database by backing up and restoring the database
+
+############################################################################################################
+# ENABLE TDE ENCRYPTION
+############################################################################################################
+
+--1) Create Master Key (There can only be one master key for each server)
+
+USE master;
+GO
+IF NOT EXISTS (SELECT * FROM sys.symmetric_keys WHERE name LIKE '%DatabaseMasterKey%')
+BEGIN
+	CREATE MASTER KEY ENCRYPTION BY PASSWORD = 'Fs9f4fkg93sdjk';
+END 
+GO
+
+--2) Create the encryption certificate. You can use the same encryption certificate to encrypt multiple databases,
+   
+	
+IF NOT EXISTS (SELECT 1 FROM sys.certificates WHERE name = 'MyServerTDECert')
+BEGIN
+	CREATE CERTIFICATE MyServerTDECert 
+	WITH SUBJECT = 'My DEK Certificate'
+	EXPIRY_DATE 'YYYYMMDD';
+END
+GO
+
+--3) Create database encryption key and set encryption ON
+
+IF NOT EXISTS (SELECT 1	FROM sys.databases d
+				JOIN sys.dm_database_encryption_keys dek
+				ON DEK.database_id = d.database_id
+				JOIN sys.certificates AS cer
+				ON dek.encryptor_thumbprint = cer.thumbprint
+				WHERE cer.name = 'CertificateName'
+				AND cer.pvt_key_encryption_type = 'MK'
+				AND d.name = 'DBName' )
+				
+	USE DatabaseName;
+
+	CREATE DATABASE ENCRYPTION KEY
+	WITH ALGORITHM = AES_256
+	ENCRYPTION BY SERVER CERTIFICATE MyServerTDECert;
+	ALTER DATABASE DatabaseName
+	SET ENCRYPTION ON;
+END
+
+-- 4) Backup certificate and private key. 
+
+USE Master
+go
+BACKUP CERTIFICATE MyServerTDECert
+TO FILE = '\\backups.cgy.dynamicrisk.net\DB_Backups_Nightly\Temporary Backups\CertificateName.cer'
+WITH PRIVATE KEY(
+FILE = '\\backups.cgy.dynamicrisk.net\DB_Backups_Nightly\Temporary Backups\CertificateName.prvk',
+ENCRYPTION BY PASSWORD = 'Fs9f4fkg93sdjk'
+)
+
+-------------------------------------------- RENEW AN EXPIRED CERTIFICATE --------------------------
+
+
+--- STEP 1) Drop the database encryption key on target database 
+
+USE DBName;
+GO
+	DROP DATABASE ENCRYPTION KEY;
+GO
+
+-- STEP 2) Drop the old certificate (The certificate must not be in use too be dropped)
+
+DROP CERTIFICATE OldTDECert
+
+-- STEP 3) Create a new certificate with a new expiry date
+
+Use master 
+
+CREATE CERTIFICATE NewTDECertName
+WITH SUBJECT = 'New TDE DEK Certificate',
+EXPIRY_DATE = '20181231';
+GO 
+
+-- STEP 4) Create new database encryption key and turn on database encryption 
+
+USE DBName
+CREATE DATABASE ENCRYPTION KEY
+WITH ALGORITHM = AES_256
+ENCRYPTION BY SERVER CERTIFICATE MyServerTDECert;
+
+ALTER DATABASE DatabaseName
+SET ENCRYPTION ON;
+
+-- STEP 5) Backup certificate and private key. 
+
+USE Master
+go
+BACKUP CERTIFICATE MyServerTDECert
+TO FILE = '\\backups.cgy.dynamicrisk.net\DB_Backups_Nightly\Temporary Backups\CertificateName.cer'
+WITH PRIVATE KEY(
+FILE = '\\backups.cgy.dynamicrisk.net\DB_Backups_Nightly\Temporary Backups\CertificateName.prvk',
+ENCRYPTION BY PASSWORD = 'Fs9f4fkg93sdjk'
+)
+
+###############################################################################################################
+TURN OFF TDE ENCRYPTION
+###############################################################################################################
+
+-- STEP 1)-- Check if TDE encryption is turned on
+
+Use master
+GO
+SELECT    name,DEK.*
+FROM      sys.databases D
+JOIN      sys.dm_database_encryption_keys DEK
+ON        DEK.database_id = D.database_id
+ORDER BY  name
+
+-- STEP 2) Turn Off TDE encryption (Replace “TDE_DB” with your target user database name)
+
+USE master;
+GO
+ALTER DATABASE TDE_DB SET ENCRYPTION OFF;
+GO
+
+-- STEP 3) Drop Database Encryption key
+
+USE TDE_DB;
+GO
+IF EXISTS (SELECT 1	FROM sys.databases d
+				JOIN sys.dm_database_encryption_keys dek
+				ON DEK.database_id = d.database_id
+				JOIN sys.certificates AS cer
+				ON dek.encryptor_thumbprint = cer.thumbprint
+				WHERE cer.name = 'CertificateName'
+				AND cer.pvt_key_encryption_type = 'MK'
+				AND d.name = 'DBName' )
+BEGIN
+	DROP DATABASE ENCRYPTION KEY;
+END
+GO
+
+-- STEP 4) Drop Certificate (ONLY DO THIS IF NO OTHER TDE ENCRYPTED DATABASES ARE USING THIS ENCRYPTION CERTIFICATE)
+
+USE master
+Go
+IF EXISTS (SELECT 1 FROM sys.certificates WHERE name = 'CertificateName')
+BEGIN
+	DROP CERTIFICATE CertificateName;
+END
+Go
+
+-- STEP 5) Delete master key
+
+USE master;
+GO
+IF NOT EXISTS (SELECT * FROM sys.symmetric_keys WHERE name LIKE '%DatabaseMasterKey%')
+BEGIN
+	DROP MASTER KEY
+END 
+GO
+

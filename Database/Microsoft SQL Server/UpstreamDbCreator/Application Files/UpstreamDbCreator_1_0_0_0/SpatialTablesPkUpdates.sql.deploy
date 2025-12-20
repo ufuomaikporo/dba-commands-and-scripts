@@ -1,0 +1,48 @@
+DECLARE @spatialIndexName varchar(100)
+DECLARE @pkName varchar(100)
+DECLARE @tableName varchar(100)
+DECLARE @sql nvarchar(max)
+
+DECLARE t_cursor CURSOR FOR
+	SELECT Table_Name
+	FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+	WHERE OBJECTPROPERTY(OBJECT_ID(CONSTRAINT_SCHEMA + '.' + QUOTENAME(CONSTRAINT_NAME)), 'IsPrimaryKey') = 1
+	AND column_name <> 'Id'
+	AND Table_name IN (SELECT c.Table_Name FROM INFORMATION_SCHEMA.Columns c Where c.Column_Name = 'Shape')
+	AND Table_Name NOT IN ('GDB_ITEMS', 'NODECONNECTION', 'NODECONNECTIONFLOWDIRECTION', 'GRIDALBERTALSD')
+	AND Table_name = 'StationSeries'
+
+OPEN t_cursor
+	FETCH NEXT FROM t_cursor INTO @tableName
+
+	WHILE @@FETCH_STATUS = 0
+	BEGIN
+		SET @spatialIndexName = (SELECT name FROM sys.spatial_indexes WHERE object_id = (select Object_id FROM sys.tables WHERE name = @tableName))
+		SET @pkName = (SELECT Constraint_Name FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+								WHERE OBJECTPROPERTY(OBJECT_ID(CONSTRAINT_SCHEMA + '.' + QUOTENAME(CONSTRAINT_NAME)), 'IsPrimaryKey') = 1
+								AND TABLE_NAME = @tableName)
+
+		SET @sql = 'DROP INDEX ' + @spatialIndexName + ' ON [dbo].' + @tableName
+		EXEC sp_executesql @sql
+
+		SET @sql = 'ALTER TABLE [dbo].[' + @tableName + '] DROP CONSTRAINT ' + @pkName
+		EXEC sp_executesql @sql
+
+		SET @sql = 'ALTER TABLE [dbo].[' + @tableName + '] ADD  CONSTRAINT PK_' + @tableName + ' PRIMARY KEY  (ID)
+
+				CREATE SPATIAL INDEX [S_' + @tableName + '_idx] ON [dbo].[' + @tableName + ']
+				(
+					[Shape]
+				)USING  GEOMETRY_AUTO_GRID 
+				WITH (BOUNDING_BOX =(-400, -90, 400, 90), 
+				CELLS_PER_OBJECT = 8, PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]'
+		EXEC sp_executesql @sql
+		FETCH NEXT FROM t_cursor INTO @tableName
+	END
+CLOSE t_cursor
+DEALLOCATE t_cursor
+
+
+
+
+

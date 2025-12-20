@@ -1,0 +1,37 @@
+DECLARE @FKTableName NVARCHAR(100)
+DECLARE @FKColumnName NVARCHAR(100)
+
+DECLARE LDCursor CURSOR FOR
+SELECT FKTableName, FKColumnName FROM ##LDTables
+WHERE FKTableName IS NOT NULL
+
+DECLARE @SQL NVARCHAR(MAX)
+DECLARE @Count INT
+
+OPEN LDCursor
+FETCH NEXT FROM LDCursor INTO @FKTableName, @FKColumnName
+
+WHILE @@FETCH_STATUS = 0
+BEGIN
+	SET @SQL = 'SELECT @Result = COUNT('+@FKColumnName+') FROM '+@FKTableName+'
+	WHERE '+@FKColumnName+' IN (46,
+160,
+161,
+162,
+163,
+164,
+600375,
+605026)'
+
+EXECUTE sp_executesql @SQL, N'@Result INT OUT', @Count OUT
+
+IF @Count > 0
+BEGIN
+	SELECT @FKColumnName, @FKTableName
+END
+	
+FETCH NEXT FROM LDCursor INTO @FKTableName, @FKColumnName
+END
+
+CLOSE LDCursor
+DEALLOCATE LDCursor

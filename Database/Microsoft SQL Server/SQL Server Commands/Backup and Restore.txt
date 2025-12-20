@@ -1,0 +1,150 @@
+####################################################################################################
+# BACKUP 
+####################################################################################################
+
+---------------------------------------------  General ------------------------------------------
+
+- when creating a brand new FULL database backup use 'FORMAT' and 'INIT' to erase any previous backups on the media
+- When appending a full backup to an existing backup media set use 'NOFORMAT', and 'NOINIT' to append to the media set
+(omit any compression specification for SQL2017 and lower versions)
+
+--------------------------------- For database is stuck in RRestoring state ----
+
+RESTORE DATABASE IPL_IRASv6_CONFIG WITH RECOVERY
+
+------------------------------------- CHECK DATABASE BACKUP HISTORY -------------------------------
+
+SELECT server_name, database_name, 
+backup_start_date, backup_finish_date, machine_name, recovery_model, is_copy_only,
+user_name CreatedByUser, name AS BackupName, description
+FROM msdb.dbo.backupmediafamily  mfwhat in stored in sql server log file
+JOIN msdb.dbo.backupset bs 
+ON bs.media_set_id = mf.media_set_id
+WHERE database_name = 'DRAS_IRASV6_DATAEXCHANGE_STAGE_6_5_0'
+ORDER BY bs.database_name, backup_start_date desc
+
+------------------------------------------- CHECK RESTORE HISTORY ---------------------------------
+
+SELECT
+rh.destination_database_name AS [Database],
+  CASE WHEN rh.restore_type = 'D' THEN 'Database'
+  WHEN rh.restore_type = 'F' THEN 'File'
+   WHEN rh.restore_type = 'I' THEN 'Differential'
+  WHEN rh.restore_type = 'L' THEN 'Log'
+    ELSE rh.restore_type 
+END AS [Restore Type],
+rh.restore_date AS [Restore Date],
+bmf.physical_device_name AS [Source], 
+rf.destination_phys_name AS [Restore File],
+  rh.user_name AS [Restored By]
+FROM msdb.dbo.restorehistory rh
+INNER JOIN msdb.dbo.backupset bs ON rh.backup_set_id = bs.backup_set_id
+INNER JOIN msdb.dbo.restorefile rf ON rh.restore_history_id = rf.restore_history_id
+INNER JOIN msdb.dbo.backupmediafamily bmf ON bmf.media_set_id = bs.media_set_id
+ORDER BY rh.restore_history_id DESC
+GO
+
+------------------------------------------- CHECK BACKUPFILE FILE FOR INFO BEFORE WITHOUT RESTORING ----------------------------
+
+-- Get info about the backup (time, server name, database name, etc)
+
+RESTORE HEADERONLY FROM DISK = '\\backups.cgy.dynamicrisk.net\DB_Backups_Nightly\Temporary Backups\IPL_IRASV6_LINK_4TESTING_Apr_09_2024.bak'
+
+-- Get info about the database file and logfile from backup file
+
+RESTORE FILELISTONLY FROM DISK = '\\backups.cgy.dynamicrisk.net\DB_Backups_Nightly\Temporary Backups\IPL_IRASV6_LINK_4TESTING_Apr_09_2024.bak'
+
+-- Check that backup is valid for a restore 
+
+RESTORE VERIFYONLY FROM DISK = '\\backups.cgy.dynamicrisk.net\DB_Backups_Nightly\Temporary Backups\IPL_IRASV6_LINK_4TESTING_Apr_09_2024.bak'
+
+----------------------------------------------------------- Backup database to disk --------------------------
+
+BACKUP DATABASE database_name
+TO DISK = 'file_path'
+WITH COPY_ONLY, 
+	FORMAT,
+	MEDIANAME = 'SQLServerBackups',
+	NAME = 'Full backup of database_name'
+
+----------------------------------------- Create a full backup ---------------------------------------------------
+
+BACKUP DATABASE SPECTRA_WCE_IRAS_LINK   
+TO DISK = 'C:\Program Files\Microsoft SQL Server\MSSQL16.MSSQLSERVER\MSSQL\Backup\SPECTRA_WCE_IRAS_LINK_DELETE_ME.bak'   
+WITH FORMAT, -- Overwrites media header on backsets on the volumes (backup location) specified 
+INIT, -- Ovewrites exisiting backupsets (does not need to be specified if FORMAT is specified)
+SKIP, -- skips the perform default behaviour of checking backupset expiration befoe overwriting them
+NAME = 'SPECTRA_WCE_IRAS_LINK Backupset', -- Backupset name
+DESCRIPTION = 'SPECTRA_WCE_IRAS_LINK Full Backup', --Backupset description
+COMPRESSION, -- Enables compression (takes longer to perform backups and restores but saves disk space)
+CHECKSUM, --
+COPY_ONLY ; -- Creates a copy-only/stand-alone backup that does not affect the normal sequence of backups
+GO  
+
+-------------------------------------- Create a differential database backup --------------------------------------
+ 
+BACKUP DATABASE SPECTRA_WCE_IRAS_LINK   
+TO DISK = 'C:\Program Files\Microsoft SQL Server\MSSQL16.MSSQLSERVER\MSSQL\Backup\SPECTRA_WCE_IRAS_LINK_DELETE_ME.bak'  
+WITH DIFFERENTIAL, -- Creates a differential backup
+NAME = 'SPECTRA_WCE_IRAS_LINK Backupset', -- Backupset name
+DESCRIPTION = 'SPECTRA_WCE_IRAS_LINK Differential Backup', --Backupset description
+COMPRESSION,   -- Enables compression
+CHECKSUM;
+GO  
+
+#################################################################################################################
+# RECOVERY
+##############################################################################################################
+--View contents of backup file
+
+RESTORE HEADERONLY FROM  DISK='\\backups.cgy.dynamicrisk.net\DB_Backups_Nightly\Temporary Backups\DRAS_IRASv6_TEST_6_3_2_QA.bak';
+
+-- View the datafile/logile info of a backupfile
+
+RESTORE FILELISTONLY FROM DISK = '\\backups.cgy.dynamicrisk.net\DB_Backups_Nightly\SQL2017\Nightly\ARAMCO_IRASV6_DE_LINK.bak'
+
+-- Validate backup file
+
+RESTORE VERIFYONLY FROM DISK = 'H:\DB_BACKUP\TEST_NEW\FULL_DB_BACKUP_TEST_261120.bak';
+
+--------------------------------------- RESTORE Only a FULL BACKUP ------------------------------------------------
+--Restore the full database backup (from backup set 1).  
+RESTORE DATABASE AdventureWorks2012   
+FROM DISK = 'Z:\SQLServerBackups\AdventureWorks2012.bak'   
+   WITH FILE=1, RECOVERY;  
+
+------------------------------------ RESTORE A DIFFERENTIAL BACKUP ----------------------------------------
+-- Query to check that the last backupset in the backup media/file is valid for a restore 
+The DifferentialBaseGUID of each differential backup should matche the BackupSetGUID
+of the base Full backup
+
+NOTE***: The query below assumes the results of the command "RESTORE HEADERONLY FROM DISK = 'C:\backupFilePath'
+is saved in the global temporary table ##BackupSetInfo
+
+SELECT  MAX(Position)
+FROM ##BackupSetInfo
+WHERE BackupType = 5
+AND DifferentialBaseGUID = (SELECT BackupSetGUID FROM ##BackupSetInfo
+							WHERE Position = (SELECT MAX(Position) 
+											  FROM ##BackupSetInfo startpt 
+											  WHERE BackupType = 1)
+							)
+								 
+STEP 1) Restore the full database backup and subsequent differential backups with norecovery (from backup set 1).  
+RESTORE DATABASE AdventureWorks2012   
+FROM DISK = 'Z:\SQLServerBackups\AdventureWorks2012.bak'   
+   WITH FILE=1, NORECOVERY; 
+
+STEP 2) Restore the final differential backup with recovery  (from backup set 2 and on).  
+RESTORE DATABASE AdventureWorks2012   
+FROM DISK = 'Z:\SQLServerBackups\AdventureWorks2012.bak'   
+   WITH FILE=2, RECOVERY;  
+GO  
+
+-- Restore a database from a backup
+
+RESTORE DATABASE database_name
+FROM DISK = 'file_path'
+WITH RECOVERY,
+MOVE 'datafile_logical_name' TO 'datafile_new_location',
+MOVE 'logfile_logical_name' TO 'logfile_new_location'

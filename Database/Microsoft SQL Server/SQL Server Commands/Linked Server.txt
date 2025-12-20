@@ -1,0 +1,260 @@
+#######################################################################################
+# QUERY A LINKED SERVER
+#######################################################################################
+
+----------------------------------------- OPTIONS For Remote Query -------------- 
+
+https://learn.microsoft.com/en-us/sql/relational-databases/linked-servers/linked-servers-openquery-openrowset-exec-at?view=sql-server-ver16
+
+----- OPTION 1) Using OPENQUERY 
+
+https://learn.microsoft.com/en-us/sql/t-sql/functions/openquery-transact-sql?view=sql-server-ver16
+
+i. Gives better performance (performs query on remote server instead of locally). 
+ii. Only option that works for Linked server connections to an Azure database usng Multi-factor authentication (MFA)
+iii. Use in the FROM clause of a query for SELECT statements. Use as target table for INSERT, UPDATE, DELETE
+iv. You can perform a join between local and remote server 
+v. May have use qualified name (DBName.Schema.ObjectName) when calling functions
+
+----- OPTION 2) Fully qualified object name using linked server (SELECT ..FROM LinkedServer.DB.Schema.Table)
+
+i. Does not work for remote queries on a remote Azure sql database using MFA
+
+---- OPTION 3) EXECUTE AT
+
+i. One of the parameters of the EXECUTE call is AT, which is designed to bypass the OPENQUERY and OPENROWSET restrictions
+ii. Allows you to execute sql functions such as OBJECT_ID() remotely
+iii. The linked server has to be configured for RPC under 'Server Options' section of linked server properties.
+	Remote Procedure Call (RPC) always you to run stored procedures remotely. 
+iv. Same performance as OPENQUERY and OPENROWSET
+v. You can preform joins between a local and remote server within the query
+
+---- OPTION 4) Using OPENROWSET
+
+i. Usage is similar to OPENQUERY (used in FROM clause of query, use as target table for INSERT, UPDATE, DELETE)
+ii. Alternative to using linked server (a linked server does not need to be created). Good for on-time adhoc remote connection
+iii. For frequent remote references to OLE DB data sources, consider using linked servers, PolyBase, or direct connections between 
+     the two data sources via tools like SQL Server Integration Services (SSIS) or custom applications.
+iv) Supports bulk operations through a built-in BULK provider that enables data from a file to be read and returned as a rowset
+
+--------------------------------------------- Simple SELECT statements ------------------------------------
+
+---------- OPTION 1) Performs query directly on the remote server. Better performance then option 2)
+
+SELECT * FROM OPENQUERY([LinkedServerName], 'select sysdate from dual');
+
+
+---------- OPTION 2)  EXECUTE...AT
+
+EXECUTE (' USE DatabaseName
+SELECT * FROM DBName.Schema.Table') AT [LinkedServerName]
+
+---------  OPTION 3) Try to avoid using this method
+
+SELECT * FROM [LinkedServerName].DBName.Schema.TableName
+ 
+------------------------------------------------- SELECT Into a variable ----------------------------------------------- 
+
+----------- OPTION 1) When the fully qualified table name is fixed or known
+
+DECLARE @SQL NVARCHAR(MAX)
+SET @SQL = N'SELECT @Result = OBJECT_ID(''dbo.ListDomain'')'
+
+EXEC DRASSQL2012EXT.ARAMCO_IRASv6_STAGE.dbo.sp_executesql @SQL, N'@Result INT OUTPUT', @Exists OUTPUT
+
+----------- OPTION 2) When the fully qualified table name is variable 
+
+Tips: 
+	i. the column of the remote query inside of the OPENQUERY function is renamed to 'IsExists' using '=' in SELECT clause so it can be referenced 
+	   in the SELECT statement that pulls from the OPENQUERY function as a source
+	ii. The 'As Ora' creates an alias for the entire remote query so it can be used in a join
+
+SELECT @SQL = 'SELECT @Result = IsExists
+               FROM OPENQUERY([DRASSQL2012EXT], ''SELECT IsExists = OBJECT_ID('''''+ @DBName + '.dbo.Listdomain'''', ''''U'''')'') As Ora'; 
+
+EXECUTE sp_executesql @SQL, N'@Result INT OUTPUT', @Result = @IfExists OUTPUT
+
+]#######################################################################################
+# INSERT USING A LINKED SERVER
+#######################################################################################
+--------------------------- INSERT ---------------------------------------------
+
+--------- OPTION 1) Using OPENQUERY gives the best performance with linked servers (runs directly on remote server instead of locally)
+
+-- Insert data from local table into remote table (user on remote db needs write privilege)
+
+INSERT OPENQUERY ([LinkedServerName], 'SELECT col1, col2 FROM DatabaseName.Schema.RemoteTable')  
+VALUES (value1, value2);
+
+-- Insert data from remote table into local table
+
+INSERT INTO DatabaseName.Schema.LocalTable (column1, column2)
+SELECT * FROM OPENQUERY ([LinkedServerName], 'SELECT col1, col2 FROM DatabaseName.Schema.RemoteTable')  
+
+--------- OPTION 2)
+
+INSERT INTO [LinkedServerName].DatabaseName.Schema.RemoteTable (col1, col2)
+VALUES (col1, col2)
+
+--------- OPTION 3) This allows you to insert remote data into a local table (Very slow compared with OPENQUERY)
+
+EXECUTE ('USE DBName
+		INSERT INTO LocalDBLinkServer.DBName.Schema.LocalTable
+		SELECT * FROM DBName.Schema.RemoteTable') AT [LinkedServerName]
+		
+]#######################################################################################
+# UPDATE USING A LINKED SERVER
+#######################################################################################
+
+
+------------------------------ UPDATE a local table with data from a remote database 
+
+----------- EXAMPLE 1
+
+NOTE**: 
+1. WHERE clause to filter rows affected by UPDATE statement MUST be placed in OPENQUERY SELECT statement
+2. Columns being modified by the UPDATE statement must be listed in OPENQUERY SELECT clause
+
+UPDATE OPENQUERY([DRASSQL2022], 'SELECT LastBackupStartDate,
+									   LastBackupFinishDate,
+									   FilePosition,
+									   LastBackupType,
+									   DaysSinceLastBackup,
+									   LastBackupMessage
+								FROM DrasInternal.dbo.DatabaseBackupInfo 
+								WHERE ServerName = @@SERVERNAME
+								AND DatabaseName = ''LGE_IRASv6_TIMP_UPDM_CONFIG''
+								AND FileName = ''LGE_IRASv6_TIMP_UPDM_CONFIG.bak'''
+				)
+SET LastBackupStartDate = 'Dec 18 2024 10:17PM',
+	LastBackupFinishDate = GETDATE(),
+	FilePosition = 1,								
+	LastBackupType = 'Database Full',
+	DaysSinceLastBackup = 0,
+	LastBackupMessage = 'SUCCESSFUL'
+
+
+----------- EXAMPLE 2)
+-- Inline view (subquery in FROM clause) is created using a query from a remote server
+-- You can use sql functions either in the SELECT .. FROM OPENQUERY statement or in the SELECT statement inside the OPENQUERY function 
+-- 
+
+SET @SQL = 'BEGIN TRANSACTION
+				UPDATE DrasInternal.dbo.ListDomainTableInfo
+				SET FlaggedDomainDescr =  subq.DomainDescr,												  
+					FlaggedDomainCatalogId = subq.Id,
+					flag = 1
+				FROM (SELECT STRING_AGG(CAST(Id AS NVARCHAR), '', '') As Id,
+							 STRING_AGG(DomainDescr, '', '') As DomainDescr
+					  FROM OPENQUERY([' + @RemoteServerName + '],
+								''SELECT Id,
+										 DomainDescr
+								FROM [' + @DBName + '].dbo.DomainCatalog'') AS dc
+					  JOIN ##LD_DCId Temp
+					  ON Temp.DomainCatalogId = dc.Id
+					) AS subq
+				WHERE ServerName = ''' + @ServerName + ''' AND DBName = ''' + @DBName + ''' 
+				AND TableName = ''' + @TableName + ''' AND ColumnName = ''' + @ColumnName + '''
+			COMMIT TRANSACTION'
+			
+------- EXAMPLE 2) You can use SELECT ...FROM OPENQUERY() WHERE... to to filter your query both on the local and remote servers
+
+SET @SQL = 'BEGIN TRANSACTION
+					INSERT INTO [DrasInternal].dbo.ListDomainTableInfo
+					(ServerName, DBName, DomainCatalogId, DomainDescr, flag)
+					SELECT * FROM OPENQUERY (' + @ServerName + ', ''SELECT DISTINCT ''''' + @ServerName + ''''',
+							''''' + @DBName + ''''',
+							ld.DomainCatalogId,
+							dc.DomainDescr,
+							0 AS flag
+					FROM ' + @DBName + '.dbo.DomainCatalog dc
+					JOIN ' + @DBName + '.dbo.ListDomain ld
+						ON dc.Id = ld.DomainCatalogId
+					WHERE ld.DomainCatalogId <> -1'') AS remotesubq
+					WHERE remotesubq.DomainDescr NOT IN (SELECT DomainDescr 
+												   FROM [DrasInternal].dbo.ListDomainTableInfo
+												   WHERE DomainDescr IS NOT NULL AND DBName = ''' + @DBName + '''  
+												   AND ServerName = ''' + @ServerName + ''')
+			COMMIT TRANSACTION'
+			
+##########################################################################################
+# SETTING UP LINKED SERVER TO MS SQL SERVER
+##########################################################################################
+
+1) Enter linked server name and set server type to SQL SERVER
+2) In 'Server Options' page set 'Use Remote Collation' to 'False'
+3) On the 'Security' page choose the security context
+
+########################################################################################
+# SETTING UP LINKED SERVER TO ORACLE
+#######################################################################################
+
+https://learn.microsoft.com/en-us/sql/t-sql/functions/openquery-transact-sql?view=sql-server-ver16
+
+1) Install Oracle client on the SQL Server host machine
+2) Set up Linked server on SSMS 
+	Linked Server : Any name you choose
+	Provider: Oracle Provider for OLE DB
+	Product: Any description you choose
+	Data Source: OracleDatabaseName
+	Provider String: Leave Empty
+	Catalog: Leave empty
+	
+	-- Use an Oracle database user credentials
+	Under Security choose: Be made using this security context 
+	Remote login: OracleUser
+	With passowrd: OracleUserPassword
+	
+3) Test the connection by right clicking the created linked server and selecting the connection test option
+4) Query the Oracle database
+
+ SELECT * FROM OPENQUERY([LinkedServerName], 'select sysdate from dual');
+ 
+5) restart the SQL Server Service
+
+############################################################################################
+# SETUP LINK SERVER TO AZURE SQL DATABASE
+############################################################################################
+
+--------------------- SSMS Link Server Setup with SQL Server Authentication --------------
+
+	Linked Server : Any name you choose
+	Provider: Microsoft OLE DB Provider for SQL Server
+	Product: Any description you choose
+	Data Source: AzureServername.database.windows.net -- Use the Fully Qualified Domain Name for the Server
+	Provider String: Leave Empty
+	Catalog: DatabaseName -- set the default database for link server connection. If This is not set the master db is the default and the user must 
+							exist in the master db 
+	
+	-- Use an Azure SQL database user credentials. User must exist within the default database the database
+	Under Security choose: Be made using this security context
+	Remote login: AzureUser
+	With passowrd: AzureUserPassword
+	
+--------------------- SSMS Link Server Setup with Microsoft Entra ID 2-fatctor Authentication --------------
+
+Note**: You need to to unselect "Allow inprocess" in the MSOLEDBSQL19 provider settings for MFA connections to work
+
+There are different authentication options. For two factor authentication use "Active Directory Interactive" authentication
+https://learn.microsoft.com/en-us/sql/connect/ado-net/sql/azure-active-directory-authentication?view=sql-server-ver16
+
+	Linked Server : Any name you choose
+	Provider: Microsoft OLE DB Driver 19 for SQL Server
+	Product: Any description you choose
+	Data Source: Leave Empty
+	Provider String: Server=ServerName.database.windows.net;Authentication=ActiveDirectoryInteractive
+	Catalog: DatabaseName -- set the default database for link server connection. If This is not set the master db is the default and the user must 
+							exist in the master db 
+	
+	-----Under Security Tab
+	OPTION 1. Under local server login to remote server login mapping
+			i. Click 'Add' to map a local user to remote user.  You can click to impersonate option of a remote user exists with the same 
+			   name as the  local user and you want to impersonate the remote user (no need to specify the remote user name in that instance)
+			ii. Do not specify a password for Active Directory Interactive authentication
+			iii. Check 'Not be made' under 'For a login not defined in the list above, connections will' if you want to limit remote connections
+			     through the linked server to mappped logins
+		 
+	OPTION 2. Using an Azure SQL database user credentials. User must exist within the default database the database
+	Under Security choose: Be made using this security context
+	Remote login: AzureUser
+	With passowrd: AzureUserPassword

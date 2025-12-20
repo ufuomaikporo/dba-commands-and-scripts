@@ -1,0 +1,38 @@
+##############################################################################
+Conecting to an ASM instance
+###############################################################################
+
+-- Set the Environment variables
+
+EXPORT ORACLE_HOME=/up1/grid/12.2.0/dbhome_1
+EXPORT ORACLE_SID=+ASM
+
+-- Connect with sqlplus
+
+SQLPLUS / as sysasm
+
+
+
+----------List the name, header_status and path of all the ASM Disks--------------
+
+COL name FORMAT A20
+COL path FORMAT A30
+
+SELECT name, header_status, path FROM V$ASM_DISK;
+
+-----------------------------------Query disk group info-----------------------------
+
+SET PAGES 999 LINES 150
+COL type FORMAT A15
+COL name FORMAT A10
+
+SELECT group_number,
+       name, 
+       sector_size,
+       logical_sector_size, 
+       block_size,  
+       total_mb,
+       free_mb,
+       state, 
+       type
+FROM v$asm_diskgroup;

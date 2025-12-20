@@ -1,0 +1,100 @@
+#########################################################################################
+#Linking an Oracle database with a non-Oracle database
+#########################################################################################
+
+https://docs.oracle.com/en/database/oracle/oracle-database/19/otgiw/config-sqlserver-gateway.html#GUID-42731798-3DCF-411C-B829-9B74310B3F03
+------------------------------------------ Check for Existing linked Servers -------------------------------
+
+-- Check settings of linked server
+
+SELECT * FROM all_users@LinkedServerName;
+
+
+-- Check for Existing linked Servers
+COL owner FORMAT A30
+COL db_link FORMAT A40
+COL host FORMAT A40
+SET LIN 120
+
+SELECT owner, db_link, host FROM all_db_links;
+
+----------------------------------------- Create Or Add linked server for SQL Server database ----------------
+
+STEP 1) Download Oracle Database Gataways and run setup installer (leave no spaces in file folder names)
+- select ODBC for non-Oracle database and or ODB for Microsoft SQL Server
+STEP 2) Customize the initialization parameter file located at ---> ORACLE_HOME\dg4msql\admin\initdg4msql.ora
+The content of the file should be as follows
+
+******************************************************
+
+# This is a customized agent init file that contains the HS parameters
+# that are needed for the Database Gateway for Microsoft SQL Server
+
+#
+# HS init parameters
+#
+HS_FDS_CONNECT_INFO=HostName:Port #OR Hostname/InstanceName/DatabaseName
+HS_FDS_TRACE_LEVEL=OFF
+HS_FDS_RECOVERY_ACCOUNT=RECOVER
+HS_FDS_RECOVERY_PWD=RECOVER
+
+*******************************************************
+
+STEP 3) Setup Listener.ora file. Enter SID_DESC entry for dg4msql and restart the listener after making changes
+
+************************************************************************
+
+SID_LIST_LISTENER =
+  (SID_LIST =
+    (SID_DESC =
+      (SID_NAME = CLRExtProc)
+      (ORACLE_HOME = C:\App\Oracle\product\19.0.0\db_home_1)
+      (PROGRAM = extproc)
+      (ENVS = "EXTPROC_DLLS=ONLY:C:\App\Oracle\product\19.0.0\db_home_1\bin\oraclr19.dll")  
+    )
+    (SID_DESC=
+	(SID_NAME=dg4msql)
+	(ORACLE_HOME = C:\App\Oracle\product\19.0.0\db_home_1)
+	(PROGRAM=dg4msql)
+    )
+  )
+
+LISTENER =
+  (DESCRIPTION_LIST =
+    (DESCRIPTION =
+      (ADDRESS = (PROTOCOL = TCP)(HOST = localhost)(PORT = 1521))
+      (ADDRESS = (PROTOCOL = IPC)(KEY = EXTPROC1521))
+    )
+  )
+
+
+************************************************************************
+
+STEP 4) Setup TNSnames.ora file
+
+*******************************************************************************
+
+dg4msql =
+  (DESCRIPTION =
+    (ADDRESS = (PROTOCOL = TCP)(HOST = localhost)(PORT = 1521))
+    (CONNECT_DATA = (SID = dg4msql))
+      (HS = OK)
+  )
+  
+**************************************************************************
+
+SETP 4) Create a database link  
+
+CREATE PUBLIC DATABASE LINK DBLinkName CONNECT TO
+ "user" IDENTIFIED BY "password" USING 'tns_name_entry';
+ 
+-- Deleting Database link
+
+DROP PUBLIC DATABASE LINK SQL2016_AU_IRASv6_STAGE;
+ 
+
+STEP 5) Test the database link. it should return an 'X'
+
+SELECT * FROM DUAL@DBLinkName;
+
+

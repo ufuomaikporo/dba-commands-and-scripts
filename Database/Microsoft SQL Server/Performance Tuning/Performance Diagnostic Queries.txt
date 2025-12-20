@@ -1,0 +1,69 @@
+----------------------------------- Get info on database transaction log usage -----------------------
+
+https://learn.microsoft.com/en-us/troubleshoot/sql/database-engine/performance/resolve-blocking-problems-caused-lock-escalation
+
+-- You can use the following query to find active transactions
+
+SELECT DB_NAME(dt.resource_database_id) AS database_name,
+    OBJECT_NAME(dt.resource_associated_entity_id, dt.resource_database_id) AS table_name,
+    at.transaction_id,
+    at.name AS transaction_name,
+    at.transaction_begin_time,
+    at.transaction_state,
+    at.transaction_status,
+    s.session_id,
+    s.login_name,
+    r.status AS request_status,
+    r.command,
+    t.text AS sql_statement
+FROM sys.dm_tran_active_transactions at
+JOIN sys.dm_tran_session_transactions st ON at.transaction_id = st.transaction_id
+JOIN sys.dm_exec_sessions s ON st.session_id = s.session_id
+LEFT JOIN sys.dm_exec_requests r ON s.session_id = r.session_id
+LEFT JOIN sys.dm_tran_locks dt ON st.session_id = dt.request_session_id AND dt.resource_type = 'OBJECT'
+OUTER APPLY sys.dm_exec_sql_text(r.sql_handle) t
+WHERE at.transaction_state <> 4 -- 4 = Committed
+
+
+------------------------ FIND Table locks 
+https://learn.microsoft.com/en-us/answers/questions/842347/sql-server-how-to-find-out-who-lock-my-specific-ta
+
+DECLARE @tblVariable TABLE(SPID INT, Status VARCHAR(200), [Login] VARCHAR(200), HostName VARCHAR(200), 
+    BlkBy VARCHAR(200), DBName VARCHAR(200), Command VARCHAR(200), CPUTime INT, 
+    DiskIO INT, LastBatch VARCHAR(200), ProgramName VARCHAR(200), _SPID INT, 
+    RequestID INT)
+
+INSERT INTO @tblVariable
+EXEC Master.dbo.sp_who2
+
+SELECT v.*, t.TEXT 
+FROM @tblVariable v
+INNER JOIN sys.sysprocesses sp ON sp.spid = v.SPID
+CROSS APPLY sys.dm_exec_sql_text(sp.sql_handle) AS t
+WHERE DbName = 'PAA_IRASV6_STAGE'
+ORDER BY BlkBy DESC, CPUTime DESC
+
+-- Find current locks and potential deadlocks in SQL Server
+
+SELECT
+    l.resource_type,
+    DB_NAME(l.resource_database_id) AS database_name,
+    OBJECT_NAME(l.resource_associated_entity_id, l.resource_database_id) AS table_name,
+    l.request_mode,
+    l.request_status,
+    l.request_session_id,
+    s.login_name,
+    s.host_name,
+    r.blocking_session_id,
+    r.status AS request_status,
+    r.command,
+    t.text AS sql_text
+FROM sys.dm_tran_locks l
+JOIN sys.dm_exec_sessions s ON l.request_session_id = s.session_id
+LEFT JOIN sys.dm_exec_requests r ON s.session_id = r.session_id
+OUTER APPLY sys.dm_exec_sql_text(r.sql_handle) t
+WHERE l.resource_type = 'OBJECT'
+ORDER BY l.request_session_id, l.resource_type;
+
+-- To find actual deadlocks, check the SQL Server error log or use Extended Events.
+-- The above query shows blocking sessions, which may indicate deadlock situations.

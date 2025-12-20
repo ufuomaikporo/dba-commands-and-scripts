@@ -1,0 +1,42 @@
+USE master
+
+DECLARE @DBNAME NVARCHAR(100)
+DECLARE @SQL NVARCHAR(MAX)
+DECLARE @DBList NVARCHAR(MAX) = 'DRAS_IRASV6_DEMO_Astera8_DE_STAGE
+DRAS_IRASV6_DEMO_Astera8_DE__CONFIG
+DRAS_IRASV6_DEMO_Astera8_DE_LINK
+'
+
+SET @DBList = REPLACE(@DBList, ' ', '');
+SET @DBList = REPLACE(@DBList, CHAR(13), '');
+SET @DBList = REPLACE(@DBList, CHAR(10), ' ');
+SET @DBList = REPLACE(@DBList, CHAR(9), '');
+SET @DBList = REPLACE(@DBList, ' ', ''', ''');
+SET @DBList = REPLACE(@DBList, ''''', ', '');
+
+SET @DBList = '''' + @DBList + '''';
+
+SET @SQL = 'DECLARE @DBName NVARCHAR(100)
+DECLARE @SQL NVARCHAR(MAX)
+DECLARE DBList_Cursor CURSOR FOR
+SELECT name FROM sys.databases
+WHERE name IN (' + @DBList + ')
+
+OPEN DBList_Cursor
+FETCH NEXT FROM DBList_Cursor INTO @DBName
+
+WHILE @@FETCH_STATUS = 0
+BEGIN
+	SET @SQL = ''USE '' + @DBNAME + '' SELECT * FROM VERSIONINFO'';
+	PRINT @SQL
+	FETCH NEXT FROM DBList_Cursor INTO @DBName
+END
+
+CLOSE DBList_Cursor
+DEALLOCATE DBList_Cursor';
+
+EXECUTE (@SQL)
+
+
+
+

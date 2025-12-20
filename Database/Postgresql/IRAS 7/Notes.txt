@@ -1,0 +1,17 @@
+psql -h hostname -U username -d databasename
+
+"C:\Program Files\PostgreSQL\15\bin\postgres.exe" --single -D "C:\Program Files\PostgreSQL\15\data" postgres
+
+SETX PATH "C:\Program Files\edb\mtk\bin;%PATH%"
+
+mtk migrate -c C:\Users\Ufuoma_Ikporo\Documents\SQL2PostGresMigration.yaml
+
+Server URL: psql-irasinsighthub-develop-pxsjv7dfqt33m.postgres.database.azure.com
+User name: pgadmin
+Password: SecureP@ssw0rd123!
+Database name: IRASInsightHubWeb
+
+Server URL: DRAS-RDW52
+User name: pgadmin
+Password: pgadminTest123
+Database name: IRASInsightHubWeb

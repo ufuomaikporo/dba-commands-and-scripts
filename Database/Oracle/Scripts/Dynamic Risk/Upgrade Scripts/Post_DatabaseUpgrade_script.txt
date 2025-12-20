@@ -1,0 +1,49 @@
+-- Connect as OWNER user, then generate and run commands to regrant permissions to normal user
+
+SET linesize 1000;
+SET pagesize 0;
+SET echo OFF;
+SET verify OFF;
+
+SELECT 'GRANT SELECT, INSERT, UPDATE, DELETE ON  '||owner||'.' || '"' ||object_Name  || '"' ||' TO '|| substr(owner, 0, length(owner)-5)||';' 
+from all_objects
+where OWNER = USER
+and object_type in ('TABLE') AND Object_Name NOT LIKE 'BIN$%'
+UNION SELECT 'GRANT SELECT ON  '||owner||'.' || '"' || object_Name  || '"' ||' TO '||substr(owner, 0, length(owner)-5)||';' 
+from all_objects
+where OWNER = USER
+and object_type in ('VIEW')
+UNION SELECT 'GRANT SELECT, ALTER ON  '||owner||'.' || '"' || object_Name  || '"' ||' TO '||substr(owner, 0, length(owner)-5)||';' 
+from all_objects
+where OWNER = USER
+and object_type in ('SEQUENCE')
+UNION SELECT 'GRANT EXECUTE ON  '||owner||'.' || '"' || object_Name  || '"' ||' TO  '||substr(owner, 0, length(owner)-5)||';'
+from all_objects
+where OWNER = USER
+and object_type in ('FUNCTION','PROCEDURE');
+
+
+-- Connect as regular (Not OWNER) user, then generate and run the commands to drop private synonymns
+
+SELECT 'DROP SYNONYM ' || OWNER || '.' || '"' || SYNONYM_NAME || '"' || ';' 
+FROM all_synonyms
+WHERE upper(OWNER) = USER;
+
+-- Connect as regular user (NOT OWNER) then generate and run the Synonymn recreation commands
+
+SET linesize 1000;
+SET pagesize 0;
+SELECT 'CREATE SYNONYM '|| USER ||'.'||'"' || object_name|| '"' ||' FOR '|| owner ||'.'|| '"' || object_name || '"' ||';' || CHR(10) AS scpt 
+FROM all_objects
+WHERE owner =  CONCAT(USER, '_OWNR')
+AND object_type in ('TABLE','SEQUENCE','FUNCTION','PROCEDURE','VIEW') AND Object_Name NOT LIKE 'BIN$%'
+AND OWNER || OBJECT_NAME NOT IN (
+    SELECT TABLE_OWNER || TABLE_NAME
+    FROM ALL_SYNONYMS
+    WHERE table_owner = CONCAT(USER, '_OWNR')
+    AND owner = USER
+); 
+SET PAGES 300;
+
+
+SELECT GRANT 

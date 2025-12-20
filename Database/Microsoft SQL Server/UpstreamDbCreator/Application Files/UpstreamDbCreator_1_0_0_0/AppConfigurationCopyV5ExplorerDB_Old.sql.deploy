@@ -1,0 +1,304 @@
+SET IDENTITY_INSERT dbo.AppConstraint ON
+INSERT INTO dbo.AppConstraint
+        ( ID,ConstraintName ,
+          ConstraintRangeLow ,
+          ConstraintRangeHigh ,
+          ConstraintFormatMask ,
+          ConstraintComments 
+        )
+SELECT  Id ,
+        ConstraintName ,
+        ConstraintRangeLow ,
+        ConstraintRangeHigh ,
+        ConstraintFormatMask ,
+        ConstraintComments FROM <SourceServer>.<SourceDb>.dbo.AppConstraint
+
+SET IDENTITY_INSERT dbo.AppConstraint OFF
+
+
+DELETE FROM UNITTYPE
+
+
+SET IDENTITY_INSERT dbo.UnitType ON
+
+INSERT INTO UnitType (Id ,
+        Code ,
+        Descr)
+SELECT  Id ,
+        Code ,
+        Descr FROM <SourceServer>.<SourceDb>.dbo.UnitType
+SET IDENTITY_INSERT dbo.UnitType OFF
+
+
+
+INSERT INTO AppUnitOfMeasure
+SELECT * FROM <SourceServer>.<SourceDb>.dbo.AppUnitOfMeasure
+
+
+INSERT INTO AppDisplayField
+SELECT * FROM <SourceServer>.<SourceDb>.dbo.AppDisplayField
+
+
+INSERT INTO AppUnitConversion
+SELECT * FROM <SourceServer>.<SourceDb>.dbo.AppUnitConversion
+
+
+
+DELETE FROM AppDataRetrievalType
+
+SET IDENTITY_INSERT dbo.AppDataRetrievalType ON
+
+INSERT INTO AppDataRetrievalType (Id ,
+        Code ,
+        Descr)
+SELECT  Id ,
+        Code ,
+        Descr FROM <SourceServer>.<SourceDb>.dbo.AppDataRetrievalType 
+SET IDENTITY_INSERT dbo.AppDataRetrievalType OFF
+
+
+
+SET IDENTITY_INSERT dbo.AppDataRetrieval on
+
+INSERT INTO AppDataRetrieval
+(Id ,
+        ParentId ,
+        DataRetrievalName ,
+        DataRetrievalDisplayText ,
+        DataRetrievalTypeLd ,
+        DataRetrievalByStationFlg ,
+        DataRetrievalReadOnlyFlg ,
+        DataRetrievalInnerJoinFlg ,
+        DataRetrievalVersion ,
+        DataRetrievalDescription ,
+        CreatedDate ,
+        CreatedUser ,
+        LastModDatetime ,
+        LastModByUserId)
+SELECT  Id ,
+        ParentId ,
+        DataRetrievalName ,
+        DataRetrievalDisplayText ,
+        DataRetrievalTypeLd ,
+        DataRetrievalByStationFlg ,
+        DataRetrievalReadOnlyFlg ,
+        DataRetrievalInnerJoinFlg ,
+        DataRetrievalVersion ,
+        DataRetrievalDescription ,
+        CreateDate ,
+        CreateByUserId ,
+        LastModDate,
+        LastModByUserId FROM <SourceServer>.<SourceDb>.dbo.AppDataRetrieval
+
+		SET IDENTITY_INSERT dbo.AppDataRetrieval OFF
+
+
+
+SET IDENTITY_INSERT dbo.AppDataItem ON
+INSERT INTO AppDataItem
+(Id ,
+        AppDataRetrievalId ,
+        DataItemJoinId ,
+        DisplayFieldCode ,
+        DataItemOrder ,
+        DataItemDisplayOrder ,
+        DataItemUserKeyFlg ,
+        DataItemDomainEditFlg ,
+        DataItemExportDataFlg ,
+        DataItemFinderFieldFlg ,
+        DataItemNullableFlg ,
+        DataItemImportParms ,
+        DataItemColor ,
+        DataItemVisibleFlg ,
+        DataItemReadOnlyFlg ,
+        DataItemExportFlg ,
+        DataItemComments )
+SELECT  Id ,
+        AppDataRetrievalId ,
+        DataItemJoinId ,
+        DisplayFieldCode ,
+        DataItemOrder ,
+        DataItemDisplayOrder ,
+        DataItemUserKeyFlg ,
+        DataItemDomainEditFlg ,
+        DataItemExportDataFlg ,
+        DataItemFinderFieldFlg ,
+        DataItemNullableFlg ,
+        DataItemImportParms ,
+        DataItemColor ,
+        DataItemVisibleFlg ,
+        DataItemReadOnlyFlg ,
+        DataItemExportFlg ,
+        DataItemComments  FROM <SourceServer>.<SourceDb>.dbo.AppDataItem
+SET IDENTITY_INSERT dbo.AppDataItem OFF
+
+SET IDENTITY_INSERT dbo.ConfigType ON
+INSERT INTO dbo.ConfigType
+(
+    Id ,
+    Code,
+    Descr,
+    CreatedUser,
+    CreatedDate,
+    LastModByUserId,
+    LastModDatetime
+)
+SELECT Id ,
+    Code,
+    Descr,
+    CreateByUserId,
+    CreateDate,
+    LastModByUserId,
+    LastModDate FROM <SourceServer>.<SourceDb>.dbo.ConfigType
+SET IDENTITY_INSERT dbo.ConfigType OFF
+
+INSERT INTO dbo.AppConfig
+        ( Oid ,
+          MapSettings ,
+          HelpEnabledFlg ,
+          DocumentRootFolder ,
+          Version ,
+          MapSearchOptions ,
+          AllegroEnable ,
+          ConfigTypeLd
+        )
+
+SELECT          NEWID() ,
+        MapSettings ,
+        HelpEnabledFlg ,
+        'C:\<DestDb>_Documents' ,
+        0 ,
+        MapSearchOptions ,
+        AllegroEnable ,
+        ConfigTypeLd  FROM <SourceServer>.<SourceDb>.dbo.AppConfig
+
+
+
+
+
+
+SET IDENTITY_INSERT dbo.AppProjectType ON
+
+INSERT INTO AppProjectType (Id ,
+        Code ,
+        Descr)
+SELECT  Id ,
+        Code ,
+        Descr FROM <SourceServer>.<SourceDb>.dbo.AppProjectType WHERE id!=0
+SET IDENTITY_INSERT dbo.AppProjectType OFF
+
+
+SET IDENTITY_INSERT dbo.AppProjectStatus ON
+
+INSERT INTO AppProjectStatus (Id ,
+        Code ,
+        Descr)
+SELECT  Id ,
+        Code ,
+        Descr FROM <SourceServer>.<SourceDb>.dbo.AppProjectStatus WHERE id!=0
+SET IDENTITY_INSERT dbo.AppProjectStatus OFF
+
+
+SET IDENTITY_INSERT dbo.AppProjectViewType ON
+
+INSERT INTO AppProjectViewType (Id ,
+        Code ,
+        Descr)
+SELECT  Id ,
+        Code ,
+        Descr FROM <SourceServer>.<SourceDb>.dbo.AppProjectViewType WHERE id!=0
+SET IDENTITY_INSERT dbo.AppProjectViewType OFF
+
+
+SET IDENTITY_INSERT dbo.ReportType ON
+INSERT INTO dbo.ReportType
+(
+    Id ,
+    Code,
+    Descr,
+    CreatedUser,
+    CreatedDate,
+    LastModByUserId,
+    LastModDatetime
+)
+SELECT Id ,
+    Code,
+    Descr,
+    CreateByUserId,
+    CreateDate,
+    LastModByUserId,
+    LastModDate FROM <SourceServer>.<SourceDb>.dbo.ReportType
+SET IDENTITY_INSERT dbo.ReportType OFF
+
+
+
+
+INSERT INTO AppReport (ReportGroupName ,
+        ReportGroupOrder ,
+        ReportName ,
+        ReportTypeLd ,
+        ReportDescription ,
+        ReportOrder ,
+        ReportClassName ,
+        ReportFilter ,
+        CreatedDate ,
+        CreatedUser ,
+        LastModDatetime ,
+        LastModByUserId)
+SELECT  ReportGroupName ,
+        ReportGroupOrder ,
+        ReportName ,
+        ReportTypeLd ,
+        ReportDescription ,
+        ReportOrder ,
+        ReportClassName ,
+        ReportFilter ,
+        CreateDate ,
+        CreateByUserId ,
+        LastModDate ,
+        LastModByUserId FROM <SourceServer>.<SourceDb>.dbo.AppReport
+
+delete FROM AppUserType
+
+
+
+SET IDENTITY_INSERT dbo.AppUserType ON
+INSERT INTO AppUserType (Id ,
+        Code ,
+        Descr)
+SELECT  Id ,
+        Code ,
+        Descr FROM <SourceServer>.<SourceDb>.dbo.AppUserType --WHERE --id!=0
+SET IDENTITY_INSERT dbo.AppUserType OFF
+
+
+SET IDENTITY_INSERT dbo.GLdSourceType ON
+INSERT INTO GLdSourceType (Id ,
+        Code ,
+        Descr)
+SELECT  Id ,
+        Code ,
+        Descr FROM <SourceServer>.<SourceDb>.dbo.GLdSourceType 
+SET IDENTITY_INSERT dbo.GLdSourceType OFF
+
+
+
+
+SET IDENTITY_INSERT dbo.AppIrasUser ON
+INSERT INTO dbo.AppIrasUser
+        ( id,Oid ,
+          AppUserName ,
+          Remarks ,
+          AppUserTypeLd ,
+          SourceTypeGLd
+        )
+       SELECT  id ,
+               Oid ,
+               AppUserName ,
+               Remarks ,
+               AppUserTypeLd ,
+               SourceTypeGLd  FROM <SourceServer>.<SourceDb>.dbo.AppIrasUser --WHERE id=7
+
+SET IDENTITY_INSERT dbo.AppIrasUser OFF
+
+

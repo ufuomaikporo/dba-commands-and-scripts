@@ -1,0 +1,23 @@
+-- use for PITR when all current redo log group files are lost
+
+RUN
+{ 
+  RESTORE DATABASE;
+  RECOVER DATABASE UNTIL AVAILABLE REDO;
+  ALTER DATABASE OPEN RESETLOGS;
+}
+
+-- Creates hot backup (database is open) of entire database and archivelog in the
+   location specified in FORMAT clause and also creates a restore point 
+   called '5th_incarnation', keeps the record in
+   RMAN catalog until 2022-04-01 and tags the backup with the specifed tag
+
+CREATE SCRIPT hot_backup_inc5 {
+BACKUP 
+DEVICE TYPE DISK
+FORMAT 'E:\BACKUPS\ORANT12C\HOT_backup\%u_%s.bkp'
+KEEP UNTIL TIME '2022-04-01'
+RESTORE POINT '5th_INCARNATION'
+TAG='incarnation_5_hot_bkp'
+DATABASE PLUS ARCHIVELOG;
+}

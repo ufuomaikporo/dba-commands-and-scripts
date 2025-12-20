@@ -1,0 +1,151 @@
+-- Create another container database 
+-- db_name=CDB1
+-- instance_name=CDB1
+-- SGA 2GB
+-- PGA 500MB
+-- Verify on the server that you have enough memory: Task Manager check current memory usage
+-- Verify on the server that you have enough free space on disk:   
+
+
+1) create initCDB1.ora parameter file 
+
+	a) at the OS, copy C:\app\oracle\admin\ORANT12C\pfile\initORANT12.ORA to
+	
+	   C:\app\oracle\admin\CDB1\pfile\
+
+        b) Rename it to initCDB1.ORA
+
+           C:\app\oracle\admin\CDB1\pfile\initCDB1.ORA
+
+	b) modify entries in the file, to be applicable for your new database:
+	(replace orant12c with cdb1, modified PGA to 500m, SGA to 2000M)
+
+	
+	Content of initCDB1.ora file:
+
+*.audit_file_dest='C:\app\Administrator\admin\cdb1\adump'
+*.audit_trail='db'
+*.compatible='12.2.0'
+*.control_files='C:\app\Administrator\oradata\cdb1\control01.ctl','C:\app\Administrator\recovery_area\cdb1\control02.ctl'
+*.db_block_size=8192
+*.db_name='cdb1'
+*.db_recovery_file_dest='C:\app\Administrator\recovery_area'
+*.db_recovery_file_dest_size=14250m
+*.diagnostic_dest='C:\app\Administrator'
+*.dispatchers='(PROTOCOL=TCP) (SERVICE=cdb1XDB)'
+*.enable_pluggable_database=true
+*.local_listener='LISTENER_cdb1'
+*.nls_language='AMERICAN'
+*.nls_territory='AMERICA'
+*.open_cursors=300
+*.pga_aggregate_target=500m
+*.processes=320
+*.remote_login_passwordfile='EXCLUSIVE'
+*.sga_target=2000m
+*.undo_tablespace='UNDOTBS1'
+
+
+
+2) Create directory structure that you are going to use:
+--locations referenced in the initCDB1.ora file
+C:\app\oracle\admin\cdb1\adump\
+C:\app\oracle\oradata\cdb1\      -- create all the subfolders
+C:\app\oracle\oradata\cdb1\pdbseed
+C:\app\oracle\recovery_area\cdb1\
+
+--datafiles will be placed here
+C:\APP\oracle\ORADATA\CDB1
+
+--Diagnostic folder structure should be created by Oracle when we create the database:
+C:\app\oracle\diag\rdbms
+
+
+
+3) Create the password file:
+
+Open cmd as Administrator and run below command:
+
+orapwd file=C:\app\Oracle\product\12.2.0\Oracle_Home1\database\PWDCDB1.ora entries=10 password=Or5cle#123 
+
+
+4) Windows only:
+
+Create the new Oracle Service, on the command line (as Administrator):
+
+Open cmd and run:
+
+oradim -NEW -SID CDB1 -STARTMODE auto -SRVCSTART system -SHUTMODE immediate
+
+Verify service was created: in Services, you should see a service OracleServiceCDB1
+
+
+5) Set the following environment variable in command line:
+
+set ORACLE_SID=CDB1
+echo %ORACLE_SID%
+
+
+6) Startup instance in NOMOUNT:
+
+sqlplus / as sysdba
+startup nomount pfile='C:\app\oracle\admin\CDB1\pfile\initCDB1.ORA'
+
+
+7) Run create database script: create_cdb1.sql
+
+connect / as sysdba
+
+@C:\SCRIPTS\create_db\create_cdb1.sql 
+
+8) If the above step is successful, then run catalog.sql and catproc.sql as the user SYS:
+
+a) run the scripts against the CONTAINER database CDB$ROOT
+connect / as sysdba
+
+SQL>@C:\app\Administrator\product\12.2.0\dbhome_1\rdbms\admin\catalog.sql
+SQL>@C:\app\Administrator\product\12.2.0\dbhome_1\rdbms\admin\catproc.sql
+
+Compile invalid objects:
+
+connect / as sysdba
+SQL>@C:\app\Administrator\product\12.2.0\dbhome_1\rdbms\admin\utlrp.sql
+
+b) run the scripts against the PDB$SEED:
+
+connect / as sysdba
+
+alter session set "_oracle_script"=true;
+alter pluggable database pdb$seed open read write force;
+
+alter session set container=PDB$SEED;
+
+SQL>@C:\app\Administrator\product\12.2.0\dbhome_1\rdbms\admin\catalog.sql
+SQL>@C:\app\Administrator\product\12.2.0\dbhome_1\rdbms\admin\catproc.sql
+SQL>@C:\app\Administrator\product\12.2.0\dbhome_1\rdbms\admin\utlrp.sql
+
+
+Verify what components are installed in the Database:
+
+connect / as sysdba 
+select comp_name, status from dba_registry;
+
+
+9) Create spfile from pfile:
+
+connect / as sysdba
+SQL> create spfile from pfile;
+SQL> shutdown immediate;
+SQL> startup;
+SQL> show parameter spfile    
+--confirm the database has started with spfile
+
+9) Configure the Oracle Service to be automatic.
+
+open command line as Administrator:
+
+oradim -EDIT -SID CDB1 -STARTMODE AUTO
+
+
+
+
+

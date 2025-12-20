@@ -1,0 +1,16 @@
+UPGRADE NOTES
+
+Iroquois - IRQ
+
+After 6.5.1 upgrade run the following scripts on the config database
+1. CONFIG_6_8_DRAS_DDL (not needed according to Daniel)
+2. CONFIG_6_10_DRAS_DDL (stored proc on lines 4689 and 4641)
+3. The following SQL code
+
+UPDATE ImportField 
+  SET VariableId = (SELECT ID FROM Variable WHERE Name = 'Exacavation_Site_Crack_Anomaly_Status')
+  WHERE ColumnDescription = 'ExcavationSiteCrackAnomaly Status';
+ 
+    UPDATE ImportField 
+  SET VariableId = (SELECT ID FROM Variable WHERE Name = 'Exacavation_Site_Crack_Anomaly_Type')
+  WHERE ColumnDescription = 'ExcavationSiteCrackAnomaly Type';

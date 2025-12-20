@@ -1,0 +1,5 @@
+--------------------- How to check if the firewall is blocking a port --------------
+
+-- 5432 is the default port for postgresql
+
+Test-NetConnection -ComputerName localhost -Port 5432

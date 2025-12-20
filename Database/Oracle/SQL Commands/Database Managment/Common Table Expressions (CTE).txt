@@ -1,0 +1,21 @@
+--------------------------------- CREATE TABLES --------------------------------
+
+CREATE TABLE tmpQuery AS
+WITH tmpQuery AS
+(SELECT DISTINCT s1.Id,
+       ROW_NUMBER() OVER (PARTITION BY s1.FKTableName, s1.FKColumnName ORDER BY s2.DomainDescr Desc ) row_num,
+       s1.FKTableName,
+       s1.FKColumnName,
+       s2.NewListDomainTable,
+       s2.DomainCatalogId,
+       s2.DomainDescr
+FROM NewDomainTableList s1
+JOIN NewDomainTableList s2
+    ON REGEXP_REPLACE(s1.FKColumnName, 'DomainId|Ld', '') = REGEXP_REPLACE(s2.DomainDescr, ' |\d', '') 
+    AND s1.DomainCatalogId IS NULL
+    AND s2.FKColumnName IS NULL
+)
+SELECT Id, FKTableName, FKColumnName, NewListDomainTable, DomainCatalogId, DomainDescr
+FROM tmpQuery
+WHERE row_num = 1
+

@@ -1,0 +1,83 @@
+----------------------------------- Database Permissions
+
+----- DataExchangeUser
+
+1. MUST ddl_admin role on the link and stage
+2. Must have read and write on the config database
+3. Must have EXECUTE on link and stage
+4. MUST have read permissions on datbase sources
+
+- Regular User (i.e Dynamic risk users) that are running DataExchange
+
+1. Have ddl_admin role on the link and stage database
+2. MUST have read and write on the Stage (tested this with Debra on IRQ) and config databases
+3. MUST have EXECUTE on Link and Stage
+4. MUST have read permissions on datbase sources
+
+------ For other Apps (Query, AdminTool, RiskAnalyst)
+
+1. Read, Write, and Execute 
+2. to publish risk results I usually give (Read, Write, Execute and ddladmin) but I suspect ddladmin might not be necessary
+
+--------------------------------  App Permissions (AdminTools)
+
+- Regular User (i.e Dynamic risk users) that are running DataExchange need to be added and given admin writes
+- Users that need to modify templates or overlay files need to be added as an internal user
+
+-------------------------- Add user as internal user ------------------------------------------
+
+DECLARE @irasUserId int
+DECLARE @irasRoleId int
+
+SET @irasUserId = (SELECT du.Id FROM dbo.DrasUser du WHERE du.UserName = 'EDDYFINDT\Ufuoma_Ikporo')
+SET @irasRoleId = (SELECT dr.Id FROM dbo.DrasRole dr WHERE dr.Name = 'Admin')
+
+-- If you want to set yourself as Internal, uncomment the following line. Otherwise, this script will make you as Admin
+SET @irasRoleId = (SELECT dr.Id FROM dbo.DrasRole dr WHERE dr.Name = 'Internal')
+
+DELETE FROM dbo.DrasUserRole WHERE IrasUserId = @irasUserId
+
+INSERT INTO dbo.DrasUserRole (IrasUserId,IrasRoleId)
+SELECT @irasUserId, @IrasRoleId
+
+-------------------------------------- DataExchange Checks --------------------------
+
+/*
+ Check that the maps (ArcGis) are loaded (run on Stage db). The maps are loaded using a specific version of ArGis Pro (2.9.xx) 
+ which requires a license that Daniel, Debra, and Josh Chung have. You can copy the maps from one db to another for the same client name. 
+ There must be data in the Bend table for it to be necessary to load the map 
+*/
+ 
+SELECT * FROM dbo.SystemPreferences 
+WHERE ParameterName LIKE '%default'
+
+-- Check that Overlay Map package is loaded (Run on config db) - Use VM on same colocation as server or it takes extremely long time
+SELECT * FROM dbo.DEFiles
+
+--Check That Astera Templates are loaded (run on Config). Only shows the date it was loaded and name of person who loaded them
+SELECT * FROM dbo.DETemplates
+
+-------------------------------------- CHECK if Someone is running DE ------------------
+
+SELECT * FROM ServerHealthInfo
+
+-- Other relevant tables 
+
+SELECT * FROM ServerEvent
+SELECT * FROM ServerProfile
+SELECT * FROM ServerRequestQueue
+
+SELECT * FROM JobTrace
+SELECT * FROM JobInfo 
+SELECT * FROM JobQueue
+SELECT * FROM DESourceTrackingFiles
+
+SELECT * FROM DEProjectTemplate ORDER BY LastModDateTime DESC
+select * from DETemplateMapping
+select * from DEProject
+
+
+
+
+
+ 

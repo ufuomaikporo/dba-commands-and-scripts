@@ -1,0 +1,241 @@
+###################################################################################################
+# MANUALLY CREATE A NON-CONTAINER DATABASE
+###################################################################################################
+
+https://docs.oracle.com/cd/A97630_01/server.920/a96521/create.htm#1003614
+-------------------------------- STEP 1) CHOOSE THE DATABASE ADMINSTRATOR AUTHENTICATION METHOD -------------------
+
+Option 1) With Password file
+Option 2) With Operating system authentication
+	- Set the REMOTE_LOGIN_PASSWORDFILE initiliazation parameter to NONE
+	- Add the windows account for administrative users into the OSDBA or OSOPER operating system defined groups
+ 
+
+	
+----------------------------------- STEP 2) CREATE THE INITIALIZATION PARAMETER FILE (PFILE) --------------------------
+
+****************************************************************************************
+# Cache and I/O
+DB_BLOCK_SIZE=8192
+
+# Cursors and Library Cache
+OPEN_CURSORS=500
+
+# Diagnostics and Statistics
+DIAGNOSTIC_DEST='C:\app\Oracle'
+
+#Recovery Area
+DB_RECOVERY_FILE_DEST='B:\Oracle\fast_recovery_area\'
+DB_RECOVERY_FILE_DEST_SIZE=13G
+
+# Control File Configuration
+CONTROL_FILES=('C:\app\Oracle\oradata\{DB_UNIQUE_NAME}\control01.ctl',
+               'E:\app\Oracle\{DB_UNIQUE_NAME}\oradata\control02.ctl',
+               'B:\Oracle\oradata\{DB_UNIQUE_NAME}\control03.ctl')
+
+
+# Shared Server
+# Uncomment and use first DISPATCHES parameter below when your listener is
+DISPATCHERS = '(PROTOCOL=TCP)(SERVICE=ora12cextXDB)',
+
+# Miscellaneous
+COMPATIBLE='12.2.0'
+DB_NAME=ORA12CEX
+
+# Distributed, Replication and Snapshot
+REMOTE_LOGIN_PASSWORDFILE=NONE
+
+# Network Registration
+INSTANCE_NAME=ORA12CEXT
+DB_UNIQUE_NAME=ORA12CEXT
+SERVICE_NAMES=ORA12CEXT.EDDYFINDT.COM
+DB_DOMAIN='EDDYFINDT.COM'
+
+# Processes and Sessions
+PROCESSES=320
+
+# Redo Log and Recovery
+FAST_START_MTTR_TARGET=300
+
+# Automatic Undo Management
+UNDO_TABLESPACE='UNDOTBS'
+
+PGA_AGGREGATE_TARGET=1500M
+SGA_TARGET=2500M
+
+*********************************************************************************************
+
+----------------------------------------- STEP 3) PREPARE ENVIRONMENT --------------------------------------
+
+----- 1) Set the environment variables
+
+SET ORACLE_SID=mynewdb
+SET ORACLE_BASE=C:\app\oracle
+SET ORACLE_HOME=C:\app\oracle\product\12.0.0\db_home
+SET PATH=%ORACLE_HOME%/bin;%PATH%
+
+---- 2) Create neccessary directories for Control files, database files, redo log files, fast recovery area, etc
+
+mkdir directorypath
+
+----------------------------------- STEP 4) CREATE THE ORACLE INSTANCE -------------------------------------
+
+-- For a complete listing of all the options visit the website below
+https://docs.oracle.com/en/database/oracle/oracle-database/19/ntqrf/creating-an-instance-using-oradim.html#GUID-BFE19571-26EE-41D2-B7E6-03C98C7C4452
+
+-- NEW indicates it's a new instance
+-- SID is the name for the instance to be created
+-- STARTMODE AUTO indicates that the instance should startup up and the database should open
+   when the Oracle database service starts (Default is STARTMODE manual). SET it to manual when creating the 
+   instance for the first time to create a new database. Then set it to auto after database creation
+-- SRVCSTART system indicates that the Oracle database service should start 
+   automatically when the sytem boots or reboots (the default is SRVCSTART demand)
+-- PFILE filname is the initialization parameter file to be used with the instance.
+   The complete path and filename is required
+-- SHUTMODE specifies how to stop the instance when the Oracle service is shut down
+   The default is SHUTMODE immediate 
+
+----- Open the command prompt as an administrator and enter the following command, substituting the appropriate variables
+
+ORADIM -NEW -SID InstanceSID -INTPWD "Passw0rd!" -STARTMODE auto -SRVCSTART system -SHUTMODE immediate -PFILE "C:\pfile.ora"
+
+-- To edit an already created instance use EDIT in place of NEW and specify the changes
+   in the same way as you would for a new instance
+
+ORADIM -EDIT -SID CLONEDB -STARTMODE manual 
+
+---- TO DELETE INSTANCE
+
+ORADIM -DELETE -SID InstanceSID
+
+--------------------------------- STEP 5) CREATE THE SERVER PARAMETER FILE (SPFILE) -----------------------------------
+
+---- 1) Make sure the following environement variables are set
+REM ---------------- Use SETX to set this as the default instance on the system level (In Windows registry)
+SETX ORACLE_SID InstanceName /m 
+SET ORACLE_BASE=C:\app\oracle
+SET ORACLE_HOME=C:\app\oracle\product\12.0.0\db_home
+
+----- 2) Connect to the newly created database instance as the SYS user and create an spfile from the pfile
+
+-- If Operating system authentication is enabled
+SQLPLUS / AS SYSDBA
+
+-- if using database authentication
+SQLPLUS sys/Password AS SYSDBA
+
+--- 3) Create an server parameter file (spfile) from the initialization parameter file (pfile)
+
+CREATE SPFILE FROM PFILE='C:\mynewDB\PFILE\initMYNEWDB.ora';
+
+---- 2) Connect to the instance in nomount mode. This is only necessary if STARTMODE is set to "manual" for the instance. If STARTMODE
+	    is set to "auto" the instance may already be in nomount mode when you connect to it
+
+STARTUP NOMOUNT
+
+-------------------------------------- STEP 6) CREATE THE DATABASE ---------------------------------
+
+---- 3) issue the create database command
+
+****************************************************************************************************
+
+-- Prompt user to set the SYS and SYSTEM passwords
+ACCEPT sysPassword CHAR PROMPT 'Enter new password for SYS: ' HIDE
+ACCEPT systemPassword CHAR PROMPT 'Enter new password for SYSTEM: ' HIDE
+
+------------------------------------------------------ CREATE DATABASE -----------------------------------------------------------
+
+CREATE DATABASE ORA12CEX -- 8 character limit for database name
+   USER SYS IDENTIFIED BY "&&sysPassword"
+   USER SYSTEM IDENTIFIED BY "&&systemPassword"
+   -- Multiplexed Redo log files
+   LOGFILE GROUP 1 ('C:\app\Oracle\oradata\ORA12CEXT\redo01a.log',
+					'E:\app\Oracle\ORA12CEXT\oradata\redo01b.log',
+					'B:\Oracle\oradata\ORA12CEXT\redo01c.log') SIZE 100M,
+           GROUP 2 ('C:\app\Oracle\oradata\ORA12CEXT\redo02a.log',
+					'E:\app\Oracle\ORA12CEXT\oradata\redo02b.log',
+					'B:\Oracle\oradata\ORA12CEXT\redo02c.log') SIZE 100M,
+           GROUP 3 ('C:\app\Oracle\oradata\ORA12CEXT\redo03a.log',
+					'E:\app\Oracle\ORA12CEXT\oradata\redo03b.log',
+					'B:\Oracle\oradata\ORA12CEXT\redo03c.log') SIZE 100M
+   MAXLOGFILES 5
+   MAXLOGMEMBERS 5
+   MAXLOGHISTORY 1
+   MAXDATAFILES 100
+   MAXINSTANCES 1
+   CHARACTER SET AL32UTF8
+   NATIONAL CHARACTER SET AL16UTF16
+   EXTENT MANAGEMENT LOCAL
+   -- Create data files
+   DATAFILE 'E:\app\Oracle\ORA12CEXT\oradata\system01.dbf' SIZE 325M REUSE
+   SYSAUX DATAFILE 'E:\app\Oracle\ORA12CEXT\oradata\sysaux01.dbf' SIZE 325M REUSE
+   DEFAULT TABLESPACE users
+      DATAFILE 'E:\app\Oracle\ORA12CEXT\oradata\users01.dbf'
+      SIZE 500M REUSE AUTOEXTEND ON MAXSIZE UNLIMITED
+   DEFAULT TEMPORARY TABLESPACE tempts1
+      TEMPFILE 'E:\app\Oracle\ORA12CEXT\oradata\temp01.dbf'
+      SIZE 20M REUSE
+   UNDO TABLESPACE UNDOTBS
+      DATAFILE 'E:\app\Oracle\ORA12CEXT\oradata\undotbs01.dbf'
+      SIZE 200M REUSE AUTOEXTEND ON MAXSIZE UNLIMITED;
+
+----------------------------------- Install Oracle components in CDB$ROOT and PDB$SEED ---------------------------
+
+CONNECT sys/"&&sysPassword" AS SYSDBA
+
+@?\rdbms\admin\catalog.sql
+@?\rdbms\admin\catproc.sql
+@?\rdbms\admin\utlrp.sql
+
+CONNECT system/"&&systemPassword"
+
+@?\sqlplus\admin\pupbld.sql
+
+******************************************************************************************
+
+------------------------------------------- STEP 7) RUN THE POST DATABASE CREATION SCRIPTS -----------------------------
+
+---- 1)  Run the following scripts to build views, synonyms, and PL/SQL packages
+
+-- connect as SYS user
+
+@?/rdbms/admin/catalog.sql
+@?/rdbms/admin/catproc.sql
+@?\rdbms\admin\utlrp.sql
+
+-- connect as SYSTEM user
+
+@?\sqlplus\admin\pupbld.sql
+
+
+---- 2)  Run Scripts to Install Additional Options (Check Oracle documentation)
+
+https://docs.oracle.com/cd/A97630_01/server.920/a96536/ch5.htm#REFRN005
+
+---- 3) You can verify components that are installed correctly in the database with the following query
+
+SET LIN 160
+COL version FORMAT A20
+COL comp_id FORMAT A30
+
+SELECT comp_id, comp_name, version,status FROM dba_registry;
+
+------------------------------------------ STEP 8) SET DATABASE TO STARTUP ON SERVICE RESTART ----------------------------------------
+
+ORADIM -EDIT -SID prod -STARTMODE auto
+
+
+------------------------------------------ STEP 9) CREATE THE DATABASE LISTENER -----------------------
+
+Use Oracle's Net Configuration Assistant to create the listener
+
+
+---------------------------------------------- POST Database Creation -----------------------------
+
+- Make sure the database service user is in the administrator group on the database host, or make sure the database service user has 
+  enough rights and access to the disk drives that the database needs to write to. If not you may encounter "access denied" errors
+  in certain situations
+
+1. Add the user account as the database service user (if not already done) 
+2. In Windows, go to "Edit Local Users and Groups" >> "Groups" and add the user to the adminstrator group
+3. Restart the database service (shuts down and restarts the database and instance)

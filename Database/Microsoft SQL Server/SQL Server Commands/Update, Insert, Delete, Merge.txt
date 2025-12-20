@@ -1,0 +1,190 @@
+#######################################################################
+# ENCOUNTERED ERRORS
+######################################################################
+
+1. 'Msg 1088, Level 16, State 13, Procedure tu_IRASCustomData11, Line 1 [Batch Start Line 5]
+Cannot find the object "IRASCustomData11" because it does not exist or you do not have permissions.'
+
+-- Drop and Recreate the trigger
+
+###################################################################
+# TIPS
+####################################################################
+
+General Tips
+1) EXECUTE permission is not required to for DML operations on tables with triggers
+
+
+Tips for Bulk Loading Tables:
+1)Disable all foreign keys to avoid data validation errors
+2)Disable all nonclustered indexes to speed up data loading
+3) To Truncate a table you must first drop all foreign keys referencing the table, truncate the table then re-create the foreign keys. 
+	An alternative method would be to disable the foreign keys referencing the table, DELETE FROM the table, then re-enable the foreign keys
+4. Aggregate functions cannot be used in the SET list of an UPDATE statement
+5. Creating an empty clone table then inserting data from source to clone is much faster than using SELECT * INTO ... FROM ... to copy a table
+
+
+--------------------- Using BEGIN TRANSACTION AND COMMIT TRANSACTION ---------------
+
+-- Use BEGIN TRANSACTION...COMMIT TRANSACTION to make sure transactions aren't left hanging when there is an error 
+		(make sure every instance of BEGIN TRANS is terminated with a COMMIT TRANS statement)
+-- Transaction could hang when there is an error (use a a try and catch block with a ROLLBACK TRANSACTION in the catch block)
+-- DDL commands such as CREATE TABLE may not work if there is an error (automatically undo DDL)
+
+#######################################################################################
+# UPDATE
+#######################################################################################
+
+NOTE***
+1. You can't UPDATE identity columns 
+	Steps for fix issue
+	1. Save and drop all foreign keys referencing the target tables
+	2. Create New table with IDENTITY column (if still necessary) and insert modified data
+	3. Update any foreign key tables if data is being changed in columns that are referenced by foreign key tables
+	4. Drop old table and rename new table using old table name 
+	5. Add primary key to new table
+	6. Recreate foreign keys
+
+----------------------- Update Using Join -------------------
+
+UPDATE ForeignKeys
+SET ColumnId = kcu.Ordinal_Position
+FROM INFORMATION_SCHEMA.key_column_usage kcu
+JOIN ForeignKeys fk
+ON fk.ReferencedTable = kcu.table_name
+AND (CASE fk.ReferencedColumn WHEN 'Id' THEN 'OriginalId' ELSE fk.ReferencedColumn END ) = kcu.column_name
+
+
+-- Join a table to itself
+
+UPDATE ForeignKeyHierarchy 
+SET Level = (CASE 
+				WHEN tab2.TableName IS NULL THEN NULL
+				ELSE tab2.Level + 1
+			END)
+FROM ForeignKeyHierarchy tab1
+LEFT JOIN (SELECT * FROM ForeignKeyHierarchy ) tab2
+ON tab1.ReferencedTable = tab2.TableName
+WHERE tab1.Level IS NULL
+
+###########################################################################################
+#INSERT 
+###########################################################################################
+
+-- Insert multiple rows with single INSERT statement
+
+INSERT INTO #Temp_FrostAreaRange (ListDomain)
+VALUES 
+('2.032-2.286m')
+,('0-0.127m')
+,('0.127-0.254m')
+,('1.778-2.032m')
+,('1.27-1.524m')
+
+---------------------------------- IDENTITY_INSERT ----------------------------
+
+-- Turn IDENTITY_INSERT ON to insert into the identity column of a table
+-- Identity insert can only be set for 1 table at a time. Must turn off for previous tables to use for other tables
+-- Not necessary if the identity column is not listed in the insert column list (if no insert column list is specified then all columns
+	including the identity column are being inserted into)
+-- The identity property cannot be removed from a table. Only option for removal is to recreate the table without the IDENTITY property
+-- When you delete from a table with an IDENTITY column the numbering continues from the last highest value in the IDENITYT column even if the entire table data was deleted. Only way to restart the count in the IDENTITY column is to truncate the table
+
+SET IDENTITY_INSERT schema.tableName ON
+SET IDENTITY_INSERT schema.tableName OFF
+
+###############################################################################
+# DELETE
+##############################################################################
+
+-- You can disable foreign keys on child tables to remove restriction around deleting from a parent table
+
+------------------------------- Delete result of subquery from table -----------------------
+
+WITH CTE AS
+(SELECT *
+FROM FKHeirarchy h
+WHERE EXISTS (SELECT * FROM ##ProblemTables p WHERE p.ParentTable = h.ParentTable
+AND p.ChildTable = h.ChildTable)
+)
+DELETE FROM CTE 
+
+###############################################################################
+# MERGE
+###############################################################################
+
+MERGE target_table AS target
+USING source_table AS source
+ON target.column = source.column
+WHEN MATCHED THEN
+    UPDATE SET 
+        target.column1 = source.column1,
+        target.column2 = source.column2
+WHEN NOT MATCHED BY TARGET THEN
+    INSERT (column1, column2, column3)
+    VALUES (source.column1, source.column2, source.column3)
+WHEN NOT MATCHED BY SOURCE THEN
+    DELETE;
+
+################################################################################
+# QUERIES
+################################################################################
+
+-- View open transactions
+
+SELECT st.session_id,
+	   d.name AS DatabaseName,
+	   login_name,
+	   host_name,
+	   dt.database_transaction_log_bytes_used/1024/1024/1024 transaction_log_GB_used,
+	   dt.database_transaction_log_bytes_reserved/1024/1024/1024 transaction_log_GB_used, 
+	   CAST(DATEDIFF(second, s.last_request_end_time, getdate())/10000 AS VARCHAR) + 'hr:' 
+	   + CAST((DATEDIFF(second, s.last_request_end_time, getdate()) % 10000)/100 AS VARCHAR) 
+		+ 'min:' + CAST((DATEDIFF(second, s.last_request_end_time, getdate()) % 100) AS VARCHAR) + 'sec' elapsed_time,
+	   CASE WHEN database_transaction_type = 1 THEN 'Read/Write' 
+			WHEN database_transaction_type = 2 THEN 'Read-Only'
+			WHEN database_transaction_type = 3 THEN 'System Transaction'
+	   END AS database_transaction_type,
+	   CASE WHEN database_transaction_state = 1 THEN 'The transaction has not been initialized'
+			WHEN database_transaction_state = 3 THEN 'The transaction has been initialized but has not generated any log records'
+			WHEN database_transaction_state = 4  THEN 'The transaction has generated log records'
+			WHEN database_transaction_state = 5  THEN 'The transaction has been prepared'
+			WHEN database_transaction_state = 10 THEN 'The transaction has been committed'
+			WHEN database_transaction_state = 11 THEN 'The transaction has been rolled back'
+			WHEN database_transaction_state = 12 THEN 'The transaction is being committed. (The log record is being generated, but has not been materialized or persisted.)'
+	   END database_transaction_state,
+	   status,
+	   cpu_time,
+	   memory_usage,
+	   reads,
+	   writes,
+	   logical_reads,
+	   total_elapsed_time,
+	   s.open_transaction_count,
+	   original_login_name
+FROM sys.dm_tran_session_transactions as st
+JOIN sys.dm_tran_database_transactions as dt
+    on dt.transaction_id = st.transaction_id
+JOIN sys.dm_exec_sessions as s
+    on s.session_id = st.session_id
+JOIN sys.databases d ON d.database_id = dt.database_Id
+
+
+-- View contents of transaction log
+
+SELECT
+ [Current LSN],
+ [Transaction ID],
+ [Operation],
+ [Transaction Name],
+ [CONTEXT],
+ [AllocUnitName],
+ [Page ID],
+ [Slot ID],
+ [Begin Time],
+ [End Time],
+ [Number of Locks],
+ [Lock Information]
+FROM sys.fn_dblog(NULL,NULL)
+ORDER BY  [Begin Time] DESC
+

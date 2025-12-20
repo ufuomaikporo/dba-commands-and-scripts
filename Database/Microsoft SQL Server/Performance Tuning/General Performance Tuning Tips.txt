@@ -1,0 +1,118 @@
+Tip 1: Add Missing Indexes
+- Nested Loops MUST be indexed
+- Adding a missing index does no guarantee better performance
+- You can use dynamic performance views to look into using indexes based on query execution history
+
+*****************************************************************************************************
+Tip 2: Check for unused Indexes
+CAUSES of unused indexes
+
+Cause 1) implicit datatype conversion. In the sample query below an integer column is being compared to a string literal which requires an implicitly converts the int data to varchar to perform the comparison
+Solution - use CAST() function to explicitly convert from one datatype to another
+
+Example)
+
+SELECT
+  *
+FROM TestTable
+WHERE IntColumn = '1';
+
+
+Cause 2) Filtered indexes can affect performance too. Suppose, we have an index on the Customer table.
+
+CREATE UNIQUE NONCLUSTERED INDEX IX ON Customer (MembershipCode)
+WHERE MembershipCode IS NOT NULL;
+
+The index won’t work for the following query:
+
+SELECT
+  *
+FROM Customer
+WHERE MembershipCode = '258410';
+
+To get use of the index, you’ll need to optimize the query in the following way:
+
+SELECT
+  *
+FROM Customer
+WHERE MembershipCode = '258410'
+AND MembershipCode IS NOT NULL;
+
+*****************************************************************************************************
+
+Tip 3: Avoid using multiple ORs in the filter predicate (Use UNION instead)
+
+SELECT
+  *
+FROM USER
+WHERE Name = @P
+OR login = @P;
+
+If we split this query into two SELECT queries and combine them by using the UNION operator, SQL Server will be able to make use of the indexes, and the query will be optimized.
+
+SELECT * FROM USER
+WHERE Name = @P
+UNION
+SELECT * FROM USER
+WHERE login = @P;
+
+*********************************************************************************************
+
+Tip 4: Use wildcards (%) at the end of a phrase only
+
+SELECT
+  p.BusinessEntityID
+ ,p.FirstName
+ ,p.LastName
+ ,p.Title
+FROM Person.Person p
+WHERE p.FirstName LIKE 'And%';
+
+However, you might encounter situations where you regularly need to search by the last symbols of a word, number, or phrase—for example, by the last digits of a telephone number. In this case, we recommend creating a persisted computed column and running the REVERSE() function on it for easier back-searching.
+
+Example)
+
+CREATE TABLE dbo.Customer (
+  id INT IDENTITY PRIMARY KEY
+ ,CardNo VARCHAR(128)
+ ,ReversedCardNo AS REVERSE(CardNo) PERSISTED
+)
+GO
+
+CREATE INDEX ByReversedCardNo ON dbo.Customer (ReversedCardNo)
+GO
+CREATE INDEX ByCardNo ON dbo.Customer (CardNo)
+GO
+
+INSERT INTO dbo.Customer (CardNo)
+  SELECT
+    NEWID()
+  FROM master.dbo.spt_values sv
+
+SELECT TOP 100
+  *
+FROM Customer c
+
+--searching for CardNo that end in 510c
+SELECT
+  *
+FROM dbo.Customer
+WHERE CardNo LIKE '%510c'
+
+SELECT
+  *
+FROM dbo.Customer
+WHERE ReversedCardNo LIKE REVERSE('%510c')
+
+*****************************************************************************************
+
+Tip 5: Avoid too many JOINs
+Solution - You can split a single query into several separate queries which can later be joined, and thus remove unnecessary joins, subqueries, tables, etc.
+
+Tip 6: Avoid using SELECT DISTINCT
+
+Another issue is that quite often people build JOINs unnecessarily, and when the data doubles, they add DISTINCT. This happens mainly in a leader-follower relation when people do SELECT DISTINCT … FROM LEADER JOIN FOLLOWER… instead of doing the correct SELECT … FROM LEADER WHERE EXISTS (SELECT… FROM FOLLOWER).
+
+Tip 7: Use SELECT fields instead of SELECT *
+
+Tip 8: Use TOP to sample query results

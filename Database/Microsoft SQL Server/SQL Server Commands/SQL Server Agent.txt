@@ -1,0 +1,112 @@
+#########################################################################
+# SQL SERVER MULTI-SERVER ADMINISTRATION SETUP
+#########################################################################
+
+https://www.mssqltips.com/sqlservertip/2445/sql-server-multi-server-administration/
+https://learn.microsoft.com/en-us/ssms/agent/use-tokens-in-job-steps?redirectedfrom=MSDN
+https://dba.stackexchange.com/questions/13347/get-job-id-or-job-name-from-within-executing-job
+
+STEP 1) Make sure SQL Server agent is enabled on the target and master server. If disabled, right-click SQL Server agent 
+		in SSMS and click 'Start'. then connect to the Server and startup the SQL Server agent service
+		
+STEP 2) Make sure 'MsxEncryptChannelOptions' registry key is set to a value of '0' in Windows registry on each target 
+		server HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Microsoft SQL Server\MSSQL##.MSSQLSERVER\SQLServerAgent. You may need to 
+		restart the database server host for the change to take effect
+		
+STEP 3) Register the target databases in SSMS 
+		i) 'View >> Registered Servers', 
+		ii)right-click 'Local Server Group >> New Server Registration'
+		iii) enter the database server name and press enter
+		
+STEP 4) Setup master server
+		i) Connect to the master database server and right-click SQL Server agent >> Multi Server Administration >> Make this a master
+		ii) Go through the setup wizard adding the target servers from list of servers registered in SSMS 
+		
+		
+		
+------------------------------- Remove target server from SQL Server Agent Master Server -----------
+
+USE msdb 
+EXEC sp_delete_targetserver 'DRASSQL2016\LATIN1_GENERAL'
+
+------------ RESYNC target Database
+
+-- Can be used when the target db status is showing as 'Normal|Suspected Offline' or 'Blocked'
+
+USE msdb 
+EXEC sp_resync_targetserver @server_name = 'DRASSQL2016'
+
+		
+-------------------------------- View Active Running Jobs -------------------------------
+
+SELECT sj.name
+   , sja.*
+FROM msdb.dbo.sysjobactivity AS sja
+INNER JOIN msdb.dbo.sysjobs AS sj ON sja.job_id = sj.job_id
+WHERE sja.start_execution_date IS NOT NULL
+   AND sja.stop_execution_date IS NULL
+   
+--------------------------------- VIEW OUTPUT OF JOB STEPS ---------------------------
+
+-- Click checkbox next to 'Log to table' in 'Job Step Properties' section of the SQL Job setup if you want the output of 
+ the job step to be stored in the table below in the msdb database of each target server
+
+SELECT * FROM sysjobstepslogs 
+
+------------------------------ View latest status of each job -----------------------------------
+
+-- Check the status of the latest execution of each job as well as the logfile output from each job step
+
+NOTE**: User needs EXECUTE privilege on msdb.dbo.agent_datetime function 
+
+USE msdb
+GRANT EXECUTE ON OBJECT::dbo.agent_datetime TO [user]
+
+
+WITH CTE AS 
+(SELECT ROW_NUMBER() OVER (PARTITION BY J.name, T.step_name ORDER BY msdb.dbo.agent_datetime(T.run_date, T.run_time) DESC) row_num,
+			JobName = J.name,
+			@@SERVERNAME AS ServerName,
+			JobInstanceId = T.instance_id,
+			StepNumber = T.step_id,
+			StepName = T.step_name,
+			StepStatus = CASE T.run_status
+			WHEN 0 THEN 'Failed'
+			WHEN 1 THEN 'Succeeded'
+			WHEN 2 THEN 'Retry'
+			WHEN 3 THEN 'Canceled'
+			ELSE 'Running' END,
+			Message = T.message,
+			LogId = jsl.log_id,
+			LogMessage = jsl.log,
+			LogSize = jsl.log_size,
+			LogCreateDate = jsl.date_created,
+			JobExecuteDate = msdb.dbo.agent_datetime(T.run_date, T.run_time),
+			StepDuration = CAST(T.run_duration/10000 AS VARCHAR) + 'hr:' + CAST((T.run_duration % 10000)/100 AS VARCHAR) 
+				+ 'min:' + CAST((T.run_duration % 100) AS VARCHAR) + 'sec'
+	FROM msdb.dbo.sysjobhistory T
+	JOIN  msdb.dbo.sysjobs J
+	ON J.job_id = T.job_id  
+	JOIN msdb.dbo.sysjobsteps js
+	ON T.job_id = js.job_id
+	JOIN (SELECT * FROM msdb.dbo.sysjobstepslogs ) AS jsl
+	ON js.step_uid = jsl.step_uid
+)
+SELECT ServerName,
+	   JobName,
+	   JobInstanceId,
+	   StepNumber,
+	   StepName,
+	   StepStatus,
+	   Message,
+	   LogId,
+	   LogMessage, 
+	   LogSize,
+	   LogCreateDate,
+	   JobExecuteDate,
+	   StepDuration
+FROM CTE tab1
+WHERE row_num = 1
+AND (SELECT MAX(JobInstanceId) FROM CTE WHERE StepNumber = 0
+AND JobName = tab1.JobName) - JobInstanceId <= (SELECT MAX(StepNumber) FROM CTE WHERE JobName = tab1.JobName)
+ORDER BY tab1.JobName, tab1.StepNumber

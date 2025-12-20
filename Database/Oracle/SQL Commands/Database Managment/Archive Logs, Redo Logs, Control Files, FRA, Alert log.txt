@@ -1,0 +1,476 @@
+########################################################################################
+ALERT LOG & OTHER DIAGNOSTICS INFO
+#########################################################################################
+
+-- Get the location of the alert log, trace files, health monitor files,ADR Home/Base, Oracle Home, etc
+
+SET LIN 200
+COL name FORMAT A30
+COL value FORMAT A60
+
+SELECT name, value FROM v$diag_info;
+
+- Get alert log location 
+
+SET LIN 200
+COL name FORMAT A30
+COL value FORMAT A60
+
+SELECT name, value FROM v$diag_info
+WHERE name = 'Diag Trace';
+
+###############################################################################
+# LOCATION OF ORACLE HOME
+###############################################################################
+
+Option 1) -- Query Location of Oracle Home 
+
+SELECT SYS_CONTEXT('USERENV', 'ORACLE_HOME') FROM DUAL;
+
+OR
+
+Option 2) -- Query the $diag_info table (Does not work on ORA12C and below)
+
+SELECT value FROM v$diag_info 
+WHERE name = 'ORACLE_HOME';
+
+Option 3) -- The DBMS_SYSTEM package belongs to SYS user (you can create a public synonym and grant access to the synonym to use it with other users)
+
+VAR oracle_home CLOB;
+EXEC DBMS_SYSTEM.GET_ENV('ORACLE_HOME', :oracle_home);
+
+PRINT oracle_home
+
+Option 4) Go to 'edit environement variables' app on Windows --> click on 'Environment Variables' --> find variable labeled as 'Oracle_home'
+
+
+    - Type 'edit environment variables' into the windows search bar on the taskbar 
+	- look for the path that mentions Oracle
+
+Option 4) Check the windows registry
+	
+ - press the windows key + 'R'
+ - GO TO ----> Computer\HKEY_LOCAL_MACHINE\SOFTWARE\ORACLE
+ - Cick on one of the 'KEY..' folders and look thorugh the right pane for the ORACLE_HOME key
+
+################################################################################
+Control Files
+################################################################################
+
+------------------View location of control files-----------------------------
+
+SET PAGES 999 LINES 300
+COL name FORMAT A50
+
+SELECT name FROM v$controlfile;
+
+------------------------Backup control file to trace log--------------------------
+
+-- control file backup should be updated everytime there is a change in the physical structure
+-- of the database (i.e. adding talespaces, datafiles, redo log groups, schemas 
+                    or renaming and moving datafiles and redo log files)
+
+ALTER DATABASE BACKUP CONTROLFILE TO TRACE AS 'C:\BACKUP\control.txt';
+
+-- Look in the alert log file for the the location of the trace file
+-- produces SQL staements that can be used to recreate the control file
+
+OR  choose your own location and filename for the backup control file
+
+ALTER DATABASE BACKUP CONTROLFILE TO 'C:\Exercise_Output\Control_files.trc';
+
+-- backs up binary control file 
+
+----------------------------Adding a control file------------------------------------------
+
+--1) List the location of all existing working control files and location of new control file
+
+ALTER SYSTEM SET control_files = 'C:\CDB2\oradata\control01.ctl',
+                                 'C:\CDB2\oradata\control02.ctl',
+                                 'C:\CDB2\oradata\control03.ctl' SCOPE =SPFILE;
+
+--2) shut down the database instance
+
+SHUTDOWN IMMEDIATE
+
+--3) make a copy of the control file in the location specified using the 
+   copy command on the OS command line or manually
+
+$copy 'C:\CDB2\oradata\control02.ctl' 'C:\CDB2\oradata\control03.ctl'
+
+--4) open the database
+
+STARTUP
+
+----------------------------------- Moving/Renaming Control files ----------------------
+
+-- Requires a databse restart
+
+SELECT name FROM V$Controlfiles;
+
+1) Alter the control file parameter in the pfile (You must specify all control files even the ones not being moved)
+
+ALTER SYSTEM SET control_files='C:\ORACLE\PRODUCT\10.1.0\ORADATA\DB10G\RENAME_CONTROL01.CTL', -
+'C:\ORACLE\PRODUCT\10.1.0\ORADATA\DB10G\CONTROL02.CTL', -
+ 'C:\ORACLE\PRODUCT\10.1.0\ORADATA\DB10G\CONTROL03.CTL' SCOPE=SPFILE;
+ 
+2) Shutdown the database 
+3) Physically move the control files (HOST command allows you to run host (cmd) commands in SQL prompt 
+
+HOST MOVE C:\ORACLE\ORADATA\DB10G\CONTROL01.CTL C:\ORACLE\ORADATA\DB10G\RENAME_CONTROL01.CTL
+HOST MOVE C:\ORACLE\ORADATA\DB10G\CONTROL02.CTL C:\ORACLE\PRODUCT\10.1.0\ORADATA\DB10G\CONTROL02.CTL
+HOST MOVE C:\ORACLE\ORADATA\DB10G\CONTROL03.CTL C:\ORACLE\PRODUCT\10.1.0\ORADATA\DB10G\CONTROL03.CTL
+
+4) restart the database
+#######################################################################
+REDO LOGS
+#######################################################################
+
+-- Place redo logs in fastest disk served by the fastet controller
+-- if possible, do not place redo log files in the same location as database files (data files)
+
+---------------------------- MONITOR LOG SWITCH FREQUENCY -------------------------
+
+- Oracle Recommends 1 log switch every 15-30 minutes or less than 6 log switches per hour at peak times (high DML activity)
+
+- Get number of log switches for each hour of each day where a log switch occured 
+
+COL day FORMAT a15;
+COL hour FORMAT a4;
+COL total FORMAT 999;
+
+SELECT
+   TO_CHAR(first_time,'yyyy-mm-dd') day,
+   TO_CHAR(first_time,'hh24')       hour,
+   COUNT(*)                         total
+FROM
+   v$log_history
+GROUP BY
+   TO_CHAR(first_time,'yyyy-mm-dd'),TO_CHAR(first_time,'hh24')
+ORDER BY
+   TO_CHAR(first_time,'yyyy-mm-dd'),TO_CHAR(first_time,'hh24')
+ASC;
+
+------------TO view the size and number of members per group------------------
+
+SET LINES 200
+
+SELECT group#, bytes/1024/1024 size_mb, members, status, archived
+FROM v$log ;
+
+--FOR CDB and non_CDB
+
+SELECT group#, bytes/1024/1024 size_mb, members, status, archived
+FROM gv$log ;
+
+----------------- To view the location of redo log members ----------------------
+
+COLUMN member FORMAT A50
+SET PAGESIZE 100
+
+SELECT group#, member FROM v$logfile
+ORDER BY 1, 2;
+
+--- FOR CBD and non-CDB
+
+COLUMN member FORMAT A50
+SET PAGESIZE 100
+
+SELECT group#, member FROM gv$logfile
+ORDER BY 2;
+
+---------------------------------Add, Dropping and Clearing log groups----------------------------
+
+-- Add a log group
+
+ALTER DATABASE
+  ADD LOGFILE GROUP 1 ('C:\DISKA\REDO01A.LOG',
+               'C:\DISKA\REDO01B.LOG') SIZE 100M REUSE;
+
+-- Add multiple logfile groups at once (for standalone instance there is only 1 THREAD for RAC system there are as many THREADS as instances)
+
+ALTER DATABASE ADD LOGFILE THREAD 1
+GROUP 1 ('B:\FAST RECOVERY AREA\ORA19C22\ORADATA\REDO01C.LOG',
+		'C:\ORACLE\APP\ORADATA\REDO01B.LOG',
+		'D:\ORADATA\ORA19C22\REDO01A.LOG') size 500M REUSE,
+GROUP 2 ('B:\FAST RECOVERY AREA\ORA19C22\ORADATA\REDO02C.LOG',
+		'C:\ORACLE\APP\ORADATA\REDO02B.LOG',
+		'D:\ORADATA\ORA19C22\REDO02A.LOG') size 500M REUSE,
+GROUP 3 ('B:\FAST RECOVERY AREA\ORA19C22\ORADATA\REDO03C.LOG',
+		'C:\ORACLE\APP\ORADATA\REDO03B.LOG',
+		'D:\ORADATA\ORA19C22\REDO03A.LOG') size 500M REUSE;
+
+-- Make sure the group being dropped is not the active group
+
+ALTER DATABASE DROP LOGFILE GROUP 3;
+
+-- This clears the data in th log group. Might be useful to help recreate missing files.
+   This indicates that the logfile can be reused. should only be used on logfiles 
+   in the INACTIVE state (not being written to and not needed for instance recovery)
+
+ALTER DATABASE CLEAR LOGFILE GROUP 3;
+
+-- Enterprise Manager Cloud Control does not allow clearing of unarchived log groups
+   you should take a backup of the entrie database first before issueing the following 
+   command
+
+ALTER DATABASE CLEAR UNARCHIVED LOGFILE GROUP 3;
+
+------------------------removing & adding logfile members----------------------------
+
+ALTER DATABASE DROP LOGFILE MEMBER 'C:\DISKA\REDO04C.LOG'
+
+-- The reuse clause allows you to reuse/overwrite the file if it already exists
+
+ALTER DATABASE ADD LOGFILE MEMBER 'C:\DISKA\REDO04C.LOG' REUSE TO GROUP 4; 
+
+--------------------------Renaming or moving redo log members ---------------------
+SELECT member FROM v$logfile;
+
+---1) Shut down the database
+
+---2) Copy the redo log files to the new location or change the name of the file
+
+-- you could use windows move or move files manually
+
+MOVE C:\old_location\file_1.txt C:\new location
+ 
+---3) Start the database in mount mode
+
+---4) Rename the files (or register the new locations of moved files
+      with the control file)
+
+ALTER DATABASE RENAME FILE
+'C:\APP\ORACLE\ORADATA\LAB\U05\REDO01B.LOG', 'C:\APP\ORACLE\ORADATA\LAB\U05\REDO02B.LOG',
+'C:\APP\ORACLE\ORADATA\LAB\U05\REDO03B.LOG', 'C:\APP\ORACLE\ORADATA\LAB\U05\REDO04B.LOG'
+TO 'C:\app\Oracle\recovery_area\LAB\REDO01B.LOG', 'C:\app\Oracle\recovery_area\LAB\REDO02B.LOG',
+   'C:\app\Oracle\recovery_area\LAB\REDO03B.LOG', 'C:\app\Oracle\recovery_area\LAB\REDO04B.LOG';
+
+---5) open the database
+
+ALTER DATABASE OPEN;
+
+------------------------------- RESIZE REDO LOG GROUPS ---------------------------------------
+
+-- Only way is the swap out the previous logfile groups
+
+1) CREATE NEW REDO LOG GROUPS (Atleast 2 new groups) with desired size
+
+2) Force a logswitch to the new group 
+
+	-- Does not wait for archiver process (quicker method)
+	ALTER SYSTEM SWITCH LOGFILE;
+	OR
+	
+	-- This command waits for the archiver process to write to archived logs first before returning control (may take few minutes)
+	ALTER SYSTEM ARCHIVE LOG CURRENT;
+
+
+3) Force a checkpoint 
+
+	ALTER SYSTEM CHECKPOINT;
+
+4) Delete Old logfile groups (you must manually delete the files on the OS after issuing the drop logfile command)
+
+	ALTER DATABASE DROP LOGFILE group 1, group 2, group 3
+
+-------------------------Manually force a log switch-----------------------------------
+
+ALTER SYSTEM SWITCH LOGFILE;
+
+-- the following command can be slower than the previous command
+-- it waits for the Archiver process to finish writing before performing the log switch
+
+ALTER SYSTEM ARCHIVE LOG CURRENT;
+
+###############################################################################
+ARCHIVED LOGS
+#################################################################################
+
+-- ARCHIVELOG mode forces online redo logs to be archived before being overwritten, and 
+   allows Point in time (PITR) and complete recovery (to the last commited transaction)
+-- online redo logs can be overwritten in NOARCHIVELOG mode
+-- if the archived log destination fills up or can no longer be written to by the 
+  Archiver(ARCn) process, the database will pause until that is fixed by the DBA
+-- production databases are usually in ARCHIVE LOG mode
+
+-------------------------check if database is in archive log mode-------------
+
+ARCHIVE LOG LIST;
+
+OR
+
+SELECT name, log_mode FROM v$database;
+
+-------------------------- Check archive log destinations -----------------------------
+
+-- Current archive log destination
+
+COL dest_name FORMAT A20
+COL destination FORMAT A50
+SET LINESIZE 120
+SET PAGESIZE 100
+
+SELECT dest_name, status, destination
+FROM v$archive_dest;
+
+-- Location of alert log and trace files
+
+SHOW PARAMETER BACKGROUND
+
+-- Location of archived log files (already archived log files)
+
+SET PAGES 999 LINES 250
+COL name format A100
+SELECT sequence#, name FROM v$archived_log;
+
+-----------------Specify a file naming format for archived log files------------------
+
+-- the default filename format for the FRA file destination cannot be changed
+-- changing the parameter below changes the file naming convention for all archived log
+file destinations except for the Fast Recovery Area (FRA) destination
+
+ALTER SYSTEM SET log_archive_format = 'LOG_%s_%t_%r.arc' SCOPE = SPFILE;
+
+------------------------How to configure Archive log mode------------------------------
+
+
+-- NOTE** specify the destination and naming convention for archived log files first
+
+-- 1) shut down database and start it up in mount mode
+
+SHUTDOWN IMMEDIATE
+STARTUP MOUNT
+
+--2)
+
+ALTER DATABASE ARCHIVELOG;
+
+-OR Turn off archive log mode using
+
+ALTER DATABASE NOARCHIVELOG;
+
+--3)
+ALTER DATABASE OPEN;
+
+-- ARCHIVELOG MODE is suited for production environements
+               - allows recovery to last commited transaction
+               - database can be open when performing a backup (hot backup)
+
+--NOARCHIVELOG MODE is suited fro training/test environments or for data warehouses with 
+                    infrequent loads
+               - only allows recovery to the time of last backup
+               - database must be closed for full or incremental backups (cold backup)
+
+-------------- SET multiplex or ADD Archived log destinations ------------------------
+
+-- destinations can be a local directory or remote (an Oracle net alias for standby database)
+
+-- The commnd below sets the archive log destination to the FRA location by using the USE_DB_RECOVERY_FILE_DEST 
+   variable for one of the archive log destinations. 
+
+ALTER SYSTEM SET log_archive_dest_1 = 'LOCATION=USE_DB_RECOVERY_FILE_DEST' SCOPE = BOTH;
+
+-- execte the command below to use another location for your archive log destination. Oracle will not keep track of files in non-FRA location. 	
+	you wil not be able to make use of the dynamic data dictionary tables for the reovery area
+
+
+ALTER SYSTEM SET log_archive_dest_2 = 'LOCATION=C:\DISKA\ArchiveLogs' SCOPE = BOTH;
+
+-- To check the location of the FRA (Fast Recovery Area)
+
+SHOW PARAMETER db_recovery_file_dest
+
+-------------------Force a log switch manual archiving------------------------------------
+
+-- Does a log switch and does not wait for archiver process to archive current log
+
+ALTER SYSTEM SWITCH LOGFILE;
+
+-- Waits for archiver process to write online redo log to file system
+
+ALTER SYSTEM ARCHIVE LOG CURRENT;
+
+-- To manually archive all unarchived online redo log files
+
+ALTER SYSTEM ARCHIVE LOG ALL;
+
+
+######################################################################################
+SET FLASH RECOVERY AREA (FRA)
+########################################################################################
+
+-- FRA is space set aside on disk that can be used for archived logs, backups, flashback logs, multiplexed 
+   control files, and multiplexed redo logs
+-- location should be seperate from database data files, primary online redo log files
+   and control files
+-- size of FRA should be atleast twice the size of database to hold one backup and several 
+   archived logs (Oracle Server automatically manages FRA storage based on 
+                 the set retention policy)
+-- WARNING** The database instance will pause/hang if there is not enough space to create archived logs
+
+------------------------------------------------- Query FRA info --------------------------------------------
+
+OPTION 1) Get the Location and space info on FRA
+
+SHOW PARAMETER db_recovery_file_dest
+
+OR 
+
+SHOW PARAMETER db_recovery
+
+OPTION 2)
+
+BREAK ON REPORT
+COMPUTE SUM OF percentage_space_used ON REPORT
+COMPUTE SUM OF percentage_space_reclaimable ON REPORT
+
+SELECT * FROM v$recovery_area_usage;
+
+OPTION 3)
+
+COL name FORMAT A30
+SET LIN 200
+
+SELECT name, 
+	   space_limit/POWER(1024,3) AS quota_gb,
+       ROUND(space_used/POWER(1024,3), 2) AS used_space_gb,
+       ROUND((space_limit - space_used)/POWER(1024,3), 2) AS remaining_gb,
+       space_reclaimable/POWER(1024,3) AS reclaimable_gb,
+	   DECODE(nvl(space_used,0),0,0,round((space_used/space_limit) * 100)) pct_used,
+       number_of_files AS files
+FROM v$recovery_file_dest;
+
+---------------------------------- View location info on FRA -----------------------------------------
+
+-- view current location, disk quota, space in use, space reclaimable by deleting files,
+  and total number of files in the following dynamic performance view
+
+v$recovery_file_dest
+
+-- view percentage of disk quota used by different files
+
+v$recovery_area_usage
+
+-- The following commands set the location and size of the FRA (Specifed folder location must already exist) 
+
+ALTER SYSTEM SET db_recovery_file_dest_size = 200M;
+ALTER SYSTEM SET db_recovery_file_dest = 'C:\app\Oracle\recovery_area\';
+
+-- QUERY the V$RECOVERY_FILE_DEST view to vew information in the FRA. 
+name: FRA name with location string
+space_limit: disk limit specified in DB_RECOVERY_FILE_DEST_SIZE parameter
+space_used: disk space used by FRA in bytes
+space_reclaimable: space that can be reclaimed by deleting obolete, redundant, and other 
+         low priority files through space management algorithm
+number_of_files: number of files in FRA 
+
+------------------------------------------ Clear space in FRA ----------------------------
+
+STEP 1) Physically Delete archivelog files from FRA
+
+STEP 2) Connect to RMAN and use the following commands
+
+CROSSCHECK ARCHIVELOG ALL;
+DELETE EXPIRED ARCHIVELOG ALL;
+

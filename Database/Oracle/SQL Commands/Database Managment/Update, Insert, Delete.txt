@@ -1,0 +1,194 @@
+ ################################################################################
+# TRAP FAILED ROWS IN DML OPERATION
+################################################################################
+
+------------------------------- Create ERROR LOGGING TABLE TO TRACK FAILED DMLS ---------------------
+
+https://oracle-base.com/articles/10g/dml-error-logging-10gr2#google_vignette
+
+---------------- STEP 1) Create the error logging table
+
+-- Create error logging table with Default name. Default table name is ---> ERR$_TABLENAME
+BEGIN
+  DBMS_ERRLOG.CREATE_ERROR_LOG (dml_table_name => 'LISTDOMAIN');
+END;
+/
+
+-- Create error logging table with a Custom name.
+BEGIN
+  DBMS_ERRLOG.CREATE_ERROR_LOG (dml_table_name     => 'LISTDOMAIN',
+                                err_log_table_name => 'ListDomain_err_log');
+END;
+/
+
+-------------- STEP 2) Find the error logging table
+
+SELECT * FROM user_tables WHERE table_name LIKE '%$%'
+
+-------------- STEP 3) Adding the DML Error logging clause allows you to insert/update/delete successful rows and trap 
+					failed rows in multi-row insert. Without the DML error logging clause no rows will be inserted if 
+					one or more rows cause an error
+
+INSERT INTO ListDomain (DomainCatalogId, Code, Descr)
+VALUES (1141, 'Tid', 'tid')
+LOG ERRORS INTO ERR$_LISTDOMAIN
+REJECT LIMIT UNLIMITED;
+
+################################################################################
+# UPDATE
+################################################################################
+
+NOTE** Always issue a ROLLBACK or COMMIT at the end of a transaction.
+
+---------------------------------- VIEW ACTIVE TRANSACTIONS ----------------
+-- transactions that have not been rolled back or committed
+
+SELECT s.sid
+      ,s.serial#
+      ,s.username
+      ,s.osuser
+      ,s.machine
+	  ,s.module
+      ,s.status
+      ,s.lockwait
+      ,t.used_ublk
+      ,t.used_urec
+      ,t.start_time
+FROM v$transaction t
+INNER JOIN v$session s ON t.addr = s.taddr;
+
+-------------------------- CORRELATED UPDATE ----------------------------------------------
+
+-- This is an alternative to using a Join in SQL Server
+
+update some_table s
+set   (s.col1, s.col2) = (select x.col1, x.col2
+                          from   other_table x
+                          where  x.key_value = s.key_value
+                         )
+where exists             (select 1
+                          from   other_table x
+                          where  x.key_value = s.key_value
+                         )
+
+-------------------------------------  EXAMPLE 1) ----------------------------------------
+						 
+--------SQL SERVER UPDATE QUERY
+UPDATE NewDomainTableList
+SET NewListDomainTable = 
+			(CASE 
+				WHEN FKTableName LIKE 'IRASCustom%' 
+					THEN 'LD_' + FKTableName + '_' + REPLACE(FKColumnName, '_DomainId', '')
+				WHEN PATINDEX('%_DomainId', FKColumnName) > 0
+					THEN 'LD_' + REPLACE(REPLACE(FKColumnName, '_DomainId', ''), 'DomainId', '') 
+				WHEN PATINDEX('%Ld', FKColumnName) > 0
+					THEN 'LD_' + REPLACE(FKColumnName, 'Ld', '')
+				ELSE 'LD_' + FKColumnName
+			END)
+WHERE NewListDomainTable IS NULL
+
+--------- ORACLE EQUIVALENT
+UPDATE NewDomainTableList tab1
+SET NewListDomainTable =
+        (SELECT CASE 
+                    WHEN FKTableName LIKE 'IRASCustom%'
+                        THEN 'LD_' || FKTableName || '_' || REPLACE(FKColumnName, '_DomainId', '')
+                    WHEN INSTR(FKColumnName, 'DomainId') > 0
+                        THEN 'LD_' || REPLACE(REPLACE(FKColumnName, '_DomainId', ''), 'DomainId', '') 
+                    WHEN INSTR(FKColumnName, 'Ld') > 0
+                        THEN 'LD_' || REPLACE(FKColumnName, 'Ld', '')
+                    ELSE 'LD_' || FKColumnName
+                END
+        FROM NewDomainTableList tab2
+        WHERE tab1.FKTableName = tab2.FKTableName
+        AND tab1.FKColumnName = tab2.FKColumnName)
+WHERE EXISTS (SELECT 1 FROM NewDomainTableList tab2
+              WHERE tab1.FKTableName = tab2.FKTableName
+              AND tab1.FKColumnName = tab2.FKColumnName)
+AND NewListDomainTable IS NULL;
+
+----------------------------------   EXAMPLE 2)  ---------------------------------
+				
+-------------- SQL Server - Update using a JOIN
+
+UPDATE NewDomainTableList
+SET NewListDomainTable = tab2.LDTableName,
+	DomainDescr = tab2.DomainDescr
+FROM NewDomainTableList tab1
+JOIN SQL2019.DrasInternal.dbo.ListDomainTableInfo tab2
+	ON tab1.FKColumnName = tab2.ColumnName
+	AND tab1.FKTableName = tab2.TableName				
+	
+------------------ ORACLE  - the subquery after the SET clause must match subquery in the WHERE EXISTS statement
+
+UPDATE NewDomainTableList tab1
+SET (NewListDomainTable) = (SELECT DISTINCT tab2."LDTableName" 
+							FROM dbo.ListDomainTableInfo@SQL2019 tab2
+							WHERE tab1.FKColumnName = tab2."ColumnName"
+							AND tab1.FKTableName = tab2."TableName")
+WHERE EXISTS (SELECT 1 
+			  FROM dbo.ListDomainTableInfo@SQL2019 tab2
+			  WHERE tab1.FKColumnName = tab2."ColumnName"
+			  AND tab1.FKTableName = tab2."TableName");
+				
+------------------- ALTERNATIVE METHOD USING MERGE   ---------------------------------
+
+This is an alternative to doing an inline view update, or and update using a join (join table 1 (s1) and table 2(s2) to update table 1)
+
+MERGE INTO NewDomainTableList s1
+USING tmpTable s2
+ON (s2.FKTableName = s1.FKTableName
+    AND s2.FKColumnName = s1.FKColumnName)
+WHEN MATCHED THEN
+UPDATE 
+SET s1.DomainCatalogId = s2.DomainCatalogId,
+    s1.DomainDescr = s2.DomainDescr,
+    s1.NewListDomainTable = s2.NewListDomainTable 
+	
+##############################################################################
+# INSERT
+##############################################################################
+
+--- Insert multiple rows at once
+
+INSERT ALL
+   INTO Temp_FrostAreaRange (ListDomain) VALUES ('2.032-2.286m')
+   INTO Temp_FrostAreaRange (ListDomain) VALUES ('0-0.127m')
+SELECT 1 FROM DUAL;
+
+--- Insert multiple rows at once (Oracle 23C)
+
+INSERT INTO t(col1, col2, col3) VALUES
+('val1_1', 'val1_2', 'val1_3'),
+('val2_1', 'val2_2', 'val2_3'),
+('val3_1', 'val3_2', 'val3_3');
+
+------------------------------------ INSERT INTO IDENTITY COLUMNS -----------------------------
+
+1) You cannot insert into a GENERATED ALWAYS AS IDENTITY column
+2) May specify (or not specify) a value of either DEFAULT or NULL when inserting into a GENERATED BY DEFAULT, or 
+  GENERATED BY DEFAULT ON NULL identity column 
+
+
+
+	
+##############################################################################
+# MERGE (allows you to combine UPDATE, INSERT, DELETE in one statement
+###############################################################################
+
+https://docs.oracle.com/en/database/oracle/oracle-database/12.2/sqlrf/MERGE.html
+
+The example below joins the tables "NewDomainTableList" and "tmpQuery" on the "Id"
+columns and updates "NewDomainTableList" table if the MERGE condition (ON clause) is true. 
+The column(s) in the MERGE condition cannot be updated within 
+the MERGE statement
+
+MERGE INTO NewDomainTableList s1
+USING tmpQuery s2
+ON (s1.Id = s2.Id)
+WHEN MATCHED THEN
+UPDATE 
+SET s1.DomainCatalogId = s2.DomainCatalogId,
+    s1.DomainDescr = s2.DomainDescr,
+    s1.NewListDomainTable = s2.NewListDomainTable 
+

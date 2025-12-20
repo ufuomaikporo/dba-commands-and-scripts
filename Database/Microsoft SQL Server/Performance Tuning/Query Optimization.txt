@@ -1,0 +1,85 @@
+####################################################################################
+# AFFECT OF QUERY ON EXECUTION PLANS
+#####################################################################################
+
+- SQL server caches 8kb datafile pages in memory in order to execute a SELECT statement,
+	But does not cache the result of the query in memory like an Oracle databse server does
+	
+- SIMPLER IS BETTER. This simpler your query syntax, the more accurate the query cost estimation.
+	Accurate query cost estimation lead to better execution plans
+
+----------------------------------WHERE CLAUSE --------------------------------------
+
+- Using a WHERE clause without an accompanying index results in a full table scan.
+	SQL Server reads through all the 8kb pages that contain all of the rows in the table
+
+----------------------------- ORDER BY CLAUSE ------------------------------------------
+
+- Sorting is the most expensive operation in SQL execution plan (takes up more cpu time and memory)
+	- SELECT *  is not costly if there is NO ORDER BY clause, but is extremely costly when there
+	  is an order by clause 
+
+- Using an index can help reduce the cost. Order of columns of the index key 
+  should be the same as the ORDER BY clause
+	
+--------------------------------- OR (in WHERE Clause) Vs UNION ----------------------------
+
+using UNION is sometimes faster than using an OR in a WHERE clause
+
+----------------------------------- Other things that affect query execution speed ------------------
+
+1) using EXECUTE () AT [LinkedServerName] is the fastest to perform a remote query
+2) using BEGIN TRANSACTION..COMMIT TRANSACTION slows down execution speed
+
+#####################################################################################
+# EXECUTION PLAN
+######################################################################################
+
+- SQL server estimates the query cost based on the number of rows it THINKS will be return by using 
+  table statistics (created when each index is created). The query cost is used to determine the best execution plan
+
+- INDEX SEEKS are faster than TABLE SCANS in some instances, but tables scans can
+	be faster or even equivalent in instances where a few rows or being read or when
+	all the rows & columns are needed
+
+- SEEK means SQL server jumps to a specific point and begins reading.
+
+- SCAN means SQL server starts at either the beginning or the end of a table and begins reading
+
+- What determines whether a seek is better than a scan or vice versa is the amount of data being 
+	read (aka the number of logical reads). SQL server chooses a seek or a scan based on the number
+	of rows it THINKS will be returned. This estimate determines the query cost and may or may not be accurate
+
+---------------------- STATISTICS IO --------------------------------
+
+- Use SET STATISTICS IO ON with you query to get a report on the IO usage of a query
+
+- logical reads are the number of data pages (8kb files) read in order to execute a query.
+	The more pages read the more taxing the query
+
+------------------------------ STATISTICS TIME -----------------------------------
+
+- SET STATISTICS TIME, IO gets the IO and CPU time statistics
+
+######################################################################################
+# TRACE A QUERY
+######################################################################################
+
+STEP 1) enable session tracing
+
+STEP 2) find the trace filesusing the query below
+
+SELECT
+   r.value                                ||'\diag\rdbms\'||
+   sys_context('USERENV','DB_NAME')       ||'\'||
+   sys_context('USERENV','INSTANCE_NAME') ||'\trace\'||
+   sys_context('USERENV','DB_NAME')       ||'_ora_'||p.spid||'.trc'
+   as tracefile_name
+FROM v$session s, v$parameter r, v$process p
+WHERE r.name = 'diagnostic_dest'
+AND s.sid = &1
+AND p.addr = s.paddr;
+
+STEP 3) convert trace file into formated output using tkprof utility
+
+tkprof C:\directryPath\ann1_ora_11408.trc C:\directryPath\ann1_ora_11408.out sys=no waits=yes aggregate=no width=180

@@ -1,0 +1,150 @@
+USE <StageDatabse>
+
+IF NOT EXISTS (SELECT * FROM tempdb.INFORMATION_SCHEMA.Tables WHERE table_name = '##TableDdlScripts')
+BEGIN
+	CREATE TABLE ##TableDdlScripts 
+	(
+		Script varchar(max)
+	)
+END
+ELSE
+BEGIN
+	DELETE FROM ##TableDdlScripts
+END
+
+IF NOT EXISTS (SELECT * FROM tempdb.INFORMATION_SCHEMA.Tables WHERE table_name = '##FKDdlScripts')
+BEGIN
+	CREATE TABLE ##FKDdlScripts
+	(
+		Script varchar(max)
+	)
+END
+ELSE
+BEGIN
+	DELETE FROM ##FKDdlScripts
+END
+
+IF NOT EXISTS (SELECT * FROM tempdb.INFORMATION_SCHEMA.Tables WHERE table_name = '##ListDomainDdlScripts')
+BEGIN
+	CREATE TABLE ##ListDomainDdlScripts 
+	(
+		Script varchar(max)
+	)
+END
+ELSE
+BEGIN
+	DELETE FROM ##ListDomainDdlScripts
+END
+
+DECLARE @TableName varchar(100)
+
+DECLARE @sql nvarchar(max)
+
+DECLARE t_cursor CURSOR FOR
+	SELECT Table_Name FROM <StageDatabse>.INFORMATION_SCHEMA.Tables 
+	WHERE Table_Type = 'Base Table'
+	AND Table_Name NOT IN (SELECT Table_Name FROM <UpstreamDatabase>.INFORMATION_SCHEMA.Tables )
+
+OPEN t_cursor
+	FETCH NEXT FROM t_cursor INTO @TableName
+
+	DELETE FROM ##FKDdlScripts
+	DELETE FROM ##TableDdlScripts
+
+	WHILE @@FETCH_STATUS = 0
+	BEGIN
+		INSERT INTO ##FKDdlScripts (Script)
+		EXEC [sp_GetFKDDL] @TableName
+
+		INSERT INTO ##TableDdlScripts
+		EXEC sp_GetTableNoFKDDL @TableName
+
+		FETCH NEXT FROM t_cursor INTO @TableName
+	END
+CLOSE t_cursor
+DEALLOCATE t_cursor
+
+Insert into ##ListDomainDdlScripts (Script)
+SELECT 'ALTER TABLE ' + tmp.TableName + ' ALTER COLUMN ' + tmp.ColumnName + ' numeric(10,0) ' + CASE WHEN is_nullable = 0 THEN 'NOT NULL' ELSE 'NULL' END AS script
+FROM (
+SELECT obj.name AS FK_NAME,tab1.name AS TableName, col1.name AS ColumnName,tab2.name AS ReferencedTable,col2.name AS ReferencedColumn, col1.is_nullable
+FROM sys.foreign_key_columns fkc
+INNER JOIN sys.objects obj ON obj.object_id = fkc.constraint_object_id
+INNER JOIN sys.tables tab1 ON tab1.object_id = fkc.parent_object_id
+INNER JOIN sys.schemas sch ON tab1.schema_id = sch.schema_id
+INNER JOIN sys.columns col1 ON col1.column_id = parent_column_id AND col1.object_id = tab1.object_id
+INNER JOIN sys.tables tab2 ON tab2.object_id = fkc.referenced_object_id
+INNER JOIN sys.columns col2 ON col2.column_id = referenced_column_id AND col2.object_id = tab2.object_id
+) tmp
+WHERE tmp.ReferencedTable = 'ListDomain' AND tmp.ColumnName NOT LIKE '%DomainId' AND tmp.ColumnName NOT LIKE '%Ld'
+
+
+USE <UpstreamDatabase>
+
+IF EXISTS (SELECT *
+FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+WHERE OBJECTPROPERTY(OBJECT_ID(CONSTRAINT_SCHEMA + '.' + QUOTENAME(CONSTRAINT_NAME)), 'IsPrimaryKey') = 1
+AND TABLE_NAME = 'AppQueryStructure' AND CONSTRAINT_NAME = 'pk_QueryStructure')
+BEGIN
+	EXEC sp_rename 'AppQueryStructure.pk_QueryStructure', 'PK_AppQueryStructure';
+END
+
+UPDATE ##TableDdlScripts SET Script = Replace(Script, 'DomainId] NUMERIC(7,0)', 'DomainId] NUMERIC(10,0)')
+UPDATE ##TableDdlScripts SET Script = Replace(Script, 'Ld] NUMERIC(7,0)', 'Ld] NUMERIC(10,0)')
+
+DECLARE ct_cursor CURSOR FOR
+	SELECT Value FROM ##TableDdlScripts
+	CROSS APPLY String_Split(replace(Script, ' GO ', '#'), '#')
+
+OPEN ct_cursor
+	FETCH NEXT FROM ct_cursor INTO @sql
+
+	WHILE @@FETCH_STATUS = 0
+	BEGIN
+		EXEC sp_executesql @sql
+		FETCH NEXT FROM ct_cursor INTO @sql
+	END
+CLOSE ct_cursor
+DEALLOCATE ct_cursor
+
+
+--SET @sql = 'ALTER TABLE [dbo].[ListDomain] DROP CONSTRAINT [PK_ListDomain] '
+--EXEC sp_executesql @sql
+
+--SET @sql = 'ALTER TABLE ListDomain ALTER COLUMN Id numeric(10,0) NOT NULL '
+--EXEC sp_executesql @sql
+
+--SET @sql = 'ALTER TABLE [dbo].[ListDomain] ADD  CONSTRAINT [PK_ListDomain] PRIMARY KEY (Id)'
+--EXEC sp_executesql @sql
+
+
+DECLARE c_cursor CURSOR FOR
+	SELECT Script FROM ##ListDomainDdlScripts
+
+OPEN c_cursor
+	FETCH NEXT FROM c_cursor INTO @sql
+
+	WHILE @@fetch_status = 0
+	BEGIN
+		EXEC sp_executesql @sql
+		FETCH NEXT FROM c_cursor INTO @sql
+	END
+CLOSE c_cursor
+DEALLOCATE c_cursor
+
+DECLARE fk_cursor CURSOR FOR
+	SELECT Script FROM ##FKDdlScripts
+
+OPEN fk_cursor
+	FETCH NEXT FROM fk_cursor INTO @sql
+
+	WHILE @@FETCH_STATUS = 0
+	BEGIN
+		EXEC sp_executesql @sql
+		FETCH NEXT FROM fk_cursor INTO @sql
+	END
+CLOSE fk_cursor
+DEALLOCATE fk_cursor
+
+
+

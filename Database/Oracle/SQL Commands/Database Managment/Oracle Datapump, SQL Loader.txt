@@ -1,0 +1,374 @@
+
+##########################################################################
+# BEST PRACTICES
+##########################################################################
+
+---------------------------------------- GENERAL NOTES ---------------------------------
+
+- for schema imports, if the user does not already exist the user will be created and all it's privilges imported. 
+	But you will have to reset the password before anyone can connect as the user
+
+- You can use '#' symbol to comment out lines
+- Tablespace being affected by export must be online 
+- Datapump import does not remove tables that were added after the dumpfile export was done. Not like a RMAN restore
+
+---------------------------------------------------------------------------------------------------------------
+
+https://www.oracle.com/a/ocom/docs/oracle-data-pump-best-practices.pdf
+https://docs.oracle.com/en/database/oracle/oracle-database/19/sutil/oracle-data-pump-export-utility.html#GUID-33880357-06B1-4CA2-8665-9D41347C6705
+
+https://docs.oracle.com/en/database/oracle/oracle-database/19/sutil/oracle-data-pump-export-utility.html#GUID-E1F27926-E038-4815-98E3-22399375F1CC
+
+1) Do not use SYS or SYSDBA to perform exports or imports except at the request of Oracle technical support
+	or when importing tranportable tablespace sets
+2) Use a paramater file. sample parameters below
+	
+-- The name used here must belong to an existing directory object. This is where all files in the export or import are assumed to be located unless
+   you specify a different directory explicitly using --> directoryname:filename 
+
+DIRECTORY=data_pump_directory  
+
+-- specify dumpfile(s) name for both imports and exports. the REUSE_DUMPFILES parameter is to overwrite the files if it already exists 
+
+DUMPFILE=dumpfile1.dmp, dumpfile12.dmp
+REUSE_DUMPFILES=Y       
+
+-- Sets export dumpfie size (max size is 16 TB)
+
+FILESIZE=16TB     
+
+-- logifle to store output of import or export. same as on screen
+
+LOGFILE=logfile.log
+
+----------- Export type 
+
+FULL = Y  #Export all objects in the dumpfile
+SCHEMAS=HR, TIM, SCOTT   #export the following schemas
+TABLES=Schema.tab1, Schema.tab2      # export tables
+
+--------------- Choose the objects that are imported/exported INLCUDE and EXCLUDE parameter are mutually exclusive (choose one.
+To see a list of valid values for object_type, query the following views:
+i. Full mode: DATABASE_EXPORT_OBJECTS
+ii. Schema mode: SCHEMA_EXPORT_OBJECTS
+iii. Table and Tablespace mode: TABLE_EXPORT_OBJECTS
+
+SYNTAX: INCLUDE=TABLE:"LIKE 'EMP%' ", INDEX:"='Test_Idx'"
+
+-- This will only import tables and triggers from the specified export type
+INCLUDE=TABLE, TRIGGER
+
+-- This will import all database objects except database statistics
+EXCLUDE=STATISTICS
+
+------------- Enables compression for the entire export operation. The ALL option requires that the Oracle Advanced Compression option is enabled.
+
+COMPRESSION=ALL
+
+------------ Some parameters to improve import export performance
+
+EXCLUDE=STATISTICS 
+LOGTIME=ALL            -- For IMPORTS (impdp)
+METRICS=YES 
+PARALLEL=4             -- Specifies the maximum number of worker processes to be used for job
+
+---------- Create a flashback point
+
+FLASHBACK_TIME=SYSTIMESTAMP   -- For EXPORT (expdp)
+
+------------ Shows how an import will be processed without performing the import
+
+SHOW = Y         
+
+-------- estimate the export file size without performing the export using ESTIMATE_ONLY='Y'. Remove the DUMPFILE parameter when using
+			ESTIMATE_ONLY. The ESTIMATE parameter can be used in imports and imports.
+   
+
+ESTIMATE_ONLY= Y   
+ESTIMATE=blocks     #Options are 'blocks' or 'statistics'
+
+
+-- Save ddl statements for import in a file. You can use a colon to create the file to a different directory 
+
+SQLFILE = dir2:filename.sql 'dir2'  						
+
+----------------------------------------- FOR BEST PERFORMANCE ------------------------------
+
+3) Make consistent datapump export by using FLASHBACK_TIME (more convenient) or FLASHBACK_SCN, which enables the
+	Flashback query utility. Database must have sufficient UNDO retenition to retian UNDO records 
+	for the duration of the export
+4) Oracle recommends that yo do not export statistics during exports. Provides better performance for export and imports
+5) record te number of objects and elapsed time about a job in the Oracle Data Pump log file using the parameter 
+	METRICS=YES. timestmap the messages that are displayed during an import using LOGTIME=ALL
+6) Improve performance with parallelism and current statistics. 
+	i) Set the PARALLEL=n where 'n' is twice the number of CPU cores (be prepared to adjust as needed)
+	ii) Specify wildcards to create multiple dumpfiles
+	iii) gather accurate statistics before and after datapump operations. Use gather_schema_stats
+	
+		BEGIN 
+			DBMS_STATS.GATHER_SCHEMA_STATS('SYS'); 
+			DBMS_STATS.GATHER_SCHEMA_STATS('SYSTEM'); 
+		END; 
+7) Set resource utilization appropriately
+8) Use a network link for servers on different OS and storage
+9) Use Securefile LOBS
+10) Set database compatibility
+11) Use export compression for space utilization and performance
+
+-------------------------------------------- ESTIMATE THE DUMPFILE SIZE ----------------------------------------
+
+METHOD 1) Counts the Oracle blocks and is less accurate but should be used for estimating size of exports without compression. 
+	This method is most accurate when there are no empty blocks (after shrinking)
+
+	EXPDP jay/password@orapdb1 SCHEMAS=ATCO_UPDM_PROD DIRECTORY=datapump ESTIMATE_ONLY=y ESTIMATE=blocks
+
+METHOD 2) Uses table/schema statistics, and is more accurate if the table/schema statistics are up to date.
+		This method should be used when performing a compressed export
+
+	-- First you should gather statistics for a more accurate estimate 
+	EXEC DBMS_STATS.GATHER_SCHEMA_STATS('ATCO_UPDM_PROD');  --For a single Schema
+
+	EXPDP jay/password@orapdb1 SCHEMAS=ATCO_UPDM_PROD DIRECTORY=datapump ESTIMATE_ONLY=y ESTIMATE=statistics 
+	
+-- with compression you can estimate that the dumpfile will be about 4 times smaller than the database size estimated
+  using the STATISTICS method
+
+----------------------------------------SAMPLE EXPORT/IMPORT PARAMETER FILES/PARAMETERS ------------------------------
+
+https://docs.oracle.com/en/database/oracle/oracle-database/19/sutil/datapump-import-utility.html#GUID-BA74D4F6-2840-4002-A673-0A7D9CBB3D78
+
+***************************** Sample Oracle datapump EXPORT ****************************
+
+DIRECTORY=DATA_PUMP  
+DUMPFILE=ETP_IRASV6_TEST_OWNR_B4_UPRADE_AUG_18.dmp
+REUSE_DUMPFILES=Y      
+LOGFILE=ETP_IRASV6_TEST_OWNR_B4_UPRADE_AUG_18.log
+SCHEMAS=ETP_IRASV6_TEST_OWNR
+EXCLUDE=STATISTICS 
+METRICS=YES 
+PARALLEL=2
+COMPRESSION=ALL #enables compression for the entire export operation. The ALL option requires that the Oracle Advanced Compression option is enabled.
+FLASHBACK_TIME=SYSTIMESTAMP   
+
+**************************** Sample Oracle datapump IMPORT *****************************
+https://docs.oracle.com/en/database/oracle/oracle-database/19/sutil/oracle-data-pump-export-utility.html#GUID-C0122FE3-71EE-4E10-8F2A-03687227292C
+
+DIRECTORY=DATA_PUMP_DIR   
+DUMPFILE=SOURCE.DMP           
+LOGFILE=SOUCRCE_SCHEMA_IMPORT.log
+SCHEMAS=SOURCE 
+REMAP_SCHEMA=SOURCE:TARGET 
+REMAP_TABLESPACE=SourceTableSpace1:TargetTablespace1, SourceTablespace2:TargetTablespace2  
+TABLE_EXISTS_ACTION=REPLACE         
+EXCLUDE=STATISTICS 
+METRICS=YES 
+LOGTIME=ALL
+PARALLEL=4 
+
+##########################################################################
+# DIRECTORIES
+##########################################################################
+-------------FINDING THE DATA_PUMP_DIR DIRECTORY--------------------
+
+-- DATA_PUMP_DIR is the default directoy for string the files from oracle datapump
+
+SET LIN 150
+SET PAGESIZE 100
+COLUMN directory_name FORMAT A25
+COLUMN directory_path FORMAT A80
+COLUMN owner FORMAT A15
+
+SELECT owner, directory_name, directory_path
+FROM dba_directories
+WHERE directory_name = 'DATA_PUMP_DIR';
+
+---------------CREATING OR CHANGING A DIRECTORY--------------------
+
+-- You may get an "LFI" database service user does not have access to the directory
+
+CREATE OR REPLACE DIRECTORY "DATA_PUMP_DIR" AS 'C:\app\Oracle\admin\CDB2\dpdump';
+
+GRANT READ, WRITE ON DIRECTORY SYS.EXT_DATA_FILES TO MYAPPUSER;
+
+################################################################################
+# QEURY DATAPUMP JOBS
+#################################################################################
+
+----------------------- Check Job Status ------------------------
+
+set linesize 250
+set pagesize 250
+col owner_name format a14
+col job_name format a23
+col operation format a13
+col job_mode format a25
+col state format a30
+
+SELECT owner_name, job_name, operation, job_mode, state 
+FROM dba_datapump_jobs
+where state='EXECUTING';
+
+-------------------------- Check progress of objects currently being loaded/unloaded ----------------------
+
+SELECT SID,
+SERIAL#, 
+USERNAME,
+opname,
+CONTEXT, 
+CASE WHEN TRUNC(elapsed_seconds/3600) <> 0 THEN TRUNC(elapsed_seconds/3600) || 'hr:' || TRUNC(MOD(elapsed_seconds,3600)/60)|| 'min:' || MOD(elapsed_seconds, 60) || 'sec' 
+    WHEN TRUNC(elapsed_seconds/60) <> 0 THEN TRUNC(MOD(elapsed_seconds,3600)/60)|| 'min:' || MOD(elapsed_seconds, 60) || 'sec' 
+    ELSE elapsed_seconds || 'sec'
+END AS elapsed_time,
+CASE WHEN TRUNC(time_remaining/3600) <> 0 THEN TRUNC(time_remaining/3600) || 'hr:' || TRUNC(MOD(time_remaining,3600)/60)|| 'min:' || MOD(time_remaining, 60) || 'sec' 
+    WHEN TRUNC(time_remaining/60) <> 0 THEN TRUNC(MOD(time_remaining,3600)/60)|| 'min:' || MOD(time_remaining, 60) || 'sec' 
+    ELSE time_remaining || 'sec'
+END AS time_remaining,
+ROUND(SOFAR/TOTALWORK*100,2) "%_COMPLETE",
+SOFAR, 
+TOTALWORK
+FROM V$SESSION_LONGOPS
+WHERE TOTALWORK != 0 AND SOFAR <> TOTALWORK;
+
+
+-- Tables curently being loaded/unloaded. The table name (SYS_IMPORT_SCHEMA_06) is the name of the export/import job and will be different than name used in query below
+
+SELECT base_object_name, base_object_type, base_process_order, 
+completed_rows, dataobj_num, size_estimate, start_time,
+object_type, dump_length, processing_state, processing_status
+FROM system.SYS_IMPORT_SCHEMA_06
+WHERE process_order > 0 AND processing_state = 'R'
+AND processing_status = 'C'
+AND start_time IS NOT NULL
+
+-------------------------------------- Check 
+
+-----------------------------------Kill DATAPUMP JOB -------------------------------
+
+-- Connect (as user who initiated the datapump job) to the import or export datapump 
+    utility depending on if it's an import (impdp) or export (expdp) job
+
+impdp user/password@ora12c ATTACH=job_name
+
+-- Enter kill_job command to stop the oracle datapump job
+export> KILL_JOB
+
+
+##################################################################################
+# EXPORTING USING ORACLE DATAPUMP
+##################################################################################
+
+
+-- SCHEMA EXPORT IS THE DEFAULT SO NO NEED TO SPECIFY SCHEMA PARMETER FOR SCHEMA EXPORTS
+-- -----------------WHEN USIN THE OWNER OF THE SCHEMA TO PERFORM THE EXPORT
+-- IN OS COMMAND PROMPT
+
+expdp 'sys as sysdba' DIRECTORY= directory_name DUMPFILE=BobSchemaexport.dmp LOGFILE=BobSchemaexport.log SCHEMAS=bob
+
+-- You must specify the schema name if user performing the export is not the schema owner
+-- For table experts, must specify the table name prefixed by the table owner if 
+   user performing the export does not own the table
+
+
+-- Optionally you can use a parameter file to specify the dumpfile, and logfile
+   location. The example below is logical backup (Oracle Data Pump export)
+   performed for the 'Disney' schema
+
+STEP 1) Create a directory on Oracle database for the dump file
+
+Create or replace directory DATA_PUMP_DIR as '/u04/oradata/backup/tst1';
+
+STEP 2) Create a parameter file
+
+-- you can use '\' as a line continuation character
+
+DUMPFILE=EXPDP_PODS_DBORA11P_20221128.DMP --name of dumpfile
+FILESIZE=5G                        -- The dumpfile size. Actual size after export will be different (max value 16TB)
+LOGFILE=IMPDP_PODS_DBORA11P_20221128.log --name of logfile
+DIRECTORY=DATA_PUMP_DIR -- directory where dumpfile and logfile will be stored
+SCHEMAS=PPODS  --schema to be exported
+CONTENT=ALL  --ALL(for metadata and table data), METADATA_ONLY (for metadata only), DATA_ONLY (for table data only)
+TABLE_EXISTS_ACTION=REPLACE -- Replaces a table if it already exists
+REMAP_SCHEMA=source_db:target_db --for import(impdp command) if importing to a target schema different from source
+REMAP_TABLESPACE=source_tblspace:target_tblspace,\ -- for importing into different target tablespace from source
+	PEMBINA_SDELOGS:SDE,\
+	PEMBINA_SDETABLES:SDE,\
+	PEMBINA_SDEINDEXES:SDE
+
+STEP 3) Use the expdp oracle export utility to perform an export. The Disney schema
+      is exported in this example. You can enter "/ as sysdba" to perform export as
+      as SYS user
+
+expdp "/ as sysdba" parfile=expdb_knowledge_schema_tst2.par
+
+-------------------Import
+
+STEP 4) Create an import parameter file (can use the export parameter file as a copy)
+        them modify the import parameter file as needed using a text editor
+
+cp expdp_disney_schema_tst1.par impdp_disney_schema_tst1.par
+
+STEP 5) Use the import utility to perform the import
+
+impdp parfile=impdp_disney_schema_tst1.par
+
+############################################## ERRORS ###################################################
+
+Issue -------------- 
+Need Oracle datapump to access directory path on a network drive
+Fix ------------------
+STEP 1) Go to Windows Services and Set the Log-on User account for the LISTENER and Oracle database service (OracleService<SID>) to an user account that has access to the network drive
+
+STEP 2) Restart the services
+
+Error/Isse --------------------------------
+ORA-39155: error expanding dump file name "\\BACKUPS.CGY.DYNAMICRISK.NET\DB_BACKUPS_NIGHTLY\TEMPORARY BACKUPS\ETP_IRASV6_TEST_OWNR.DMP"
+ORA-48128: opening of a symbolic link is disallowed
+
+Fix -------------------------------------------
+
+STEP 1) Run the following commands
+
+ALTER SYSTEM SET "_disable_directory_link_check" = TRUE SCOPE=SPFILE;
+ALTER SYSTEM SET "_kolfuseslf" = TRUE SCOPE=SPFILE;
+
+STEP 2)
+
+shutdown and restart database
+
+########################################################################################
+# IMPORT USING ORACLE DATAPUMP
+##############################################################################################
+
+-----------------------------IMPORT ONLY THE DATA  --------------------------------
+
+impdp 'sys as sysdba' TABLES=bob.course CONTENT=DATA_ONLY DUMPFILE=bobschemaexport.dmp LOGFILE=BobTableimport.log
+
+-- DATA_ONLY option excludes importing metadata
+
+--------------------------------REMAPPING FROM BOB SCHEMA TO BOB2 SHEMA----------------------------------------------
+
+-- remapping allows yout to import data into a schema, table, etc that is different
+   from the original schema, table, etc
+-- user bob2 does not need to exist first before import if importing into the same database
+   that the export was performed on
+
+impdp 'sys as sysdba' DUMPFILE=bobschemaexport.dmp LOGFILE=bob2schemaimport.log REMAP_SCHEMA=bob:bob2
+
+---------------------------REMAPPING SCHEMAS ON THE SAME SYSTEM---------------------------------------------
+
+-- CREATE a directory object (lab_dir) in target database and a directory folder on the OS level
+-- copy the source dump file to the directory location 
+
+impdp system@pdb1/Or5cle#123 DIRECTORY=lab_dir DUMPFILE=bobschemaexport.dmp LOGFILE=johnschemaimport.log REMAP_SCHEMA=bob:john
+
+###################################################################################
+SQL LOADER
+###################################################################################
+
+-- The bad file stores rows that are rejected by sql loader
+-- the discard file stores rows discarded by your database (i.e constraint violations, 
+   values that are too large for defined column datatype length)
+
+-- using the sql loader command
+
+SQLLDR USERID=prod_acct/Or5cle#123@acctpdb CONTROL=C:\app\Oracle\admin\COCDB\Scripts\Load\Load_Well_Info.ctl LOG=C:\app\Oracle\admin\COCDB\Scripts\Load\Load_Well_Info.log

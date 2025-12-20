@@ -1,0 +1,133 @@
+WITH CTE AS
+(SELECT DISTINCT r.ROUTE_ID
+	,r.Effective_From_Date AS EffectiveStartDate
+	,r.EFFECTIVE_TO_DATE AS EffectiveEndDate
+FROM ROUTE_V_2 r 
+LEFT JOIN REGULATORY_AGENCY_BOUNDARY_V_2 a on a.ROUTE_ID = r.ROUTE_ID
+left join ARC_STATUS_RANGE_V s on s.ROUTE_ID = r.ROUTE_ID
+JOIN Operating_Status_GCL os ON s.OPERATING_STATUS_GCL = os.Code
+WHERE s.Operating_Status_GCL NOT IN ('AB','RT')
+	AND a.REG_AGENCY_CL not in ('RFP', 'NFP')
+	AND os.ACTIVE_INDICATOR_LF = 'Y'
+	AND r.Current_Indicator_lf = 'Y'
+	)
+SELECT tbl.EVENT_ID SourceId
+	,tbl.ROUTE_ID StationSeriesID
+	,EffectiveStartDate
+	,EffectiveEndDate
+	,tbl.Comments
+	,tbl.BEGIN_MEASURE AS BeginStationNum
+	,tbl.END_MEASURE AS EndStationNum
+	,20 AS HCAType
+FROM CTE 
+JOIN ARC_HCA_CA_SEGMENT_V tbl ON cte.ROUTE_ID = tbl.ROUTE_ID 
+AND tbl.DIRECT_OPA_AFF_LF = 'Y'
+UNION
+SELECT DISTINCT  tbl.EVENT_ID SourceId
+	,tbl.ROUTE_ID StationSeriesID
+	,EffectiveStartDate
+	,EffectiveEndDate
+	,tbl.Comments
+	,tbl.BEGIN_MEASURE AS BeginStationNum
+	,tbl.END_MEASURE AS EndStationNum
+	,21 AS HCAType
+FROM CTE
+JOIN ARC_HCA_CA_SEGMENT_V tbl ON cte.ROUTE_ID = tbl.ROUTE_ID 
+AND tbl.INDIRECT_OPA_AFF_LF = 'Y'
+UNION
+SELECT DISTINCT  tbl.EVENT_ID SourceId
+	,tbl.ROUTE_ID StationSeriesID
+	,EffectiveStartDate
+	,EffectiveEndDate
+	,tbl.Comments
+	,tbl.BEGIN_MEASURE AS BeginStationNum
+	,tbl.END_MEASURE AS EndStationNum
+	,22 AS HCAType
+FROM CTE
+JOIN ARC_HCA_CA_SEGMENT_V tbl ON cte.ROUTE_ID = tbl.ROUTE_ID 
+AND tbl.DIRECT_HPA_AFF_LF = 'Y'
+UNION
+SELECT DISTINCT  tbl.EVENT_ID SourceId
+	,tbl.ROUTE_ID StationSeriesID
+	,EffectiveStartDate
+	,EffectiveEndDate
+	,tbl.Comments
+	,tbl.BEGIN_MEASURE AS BeginStationNum
+	,tbl.END_MEASURE AS EndStationNum
+	,23 AS HCAType
+FROM CTE
+JOIN ARC_HCA_CA_SEGMENT_V tbl ON cte.ROUTE_ID = tbl.ROUTE_ID 
+	AND tbl.INDIRECT_HPA_AFF_LF = 'Y'
+UNION
+SELECT DISTINCT  tbl.EVENT_ID SourceId
+	,tbl.ROUTE_ID StationSeriesID
+	,EffectiveStartDate
+	,EffectiveEndDate
+	,tbl.Comments
+	,tbl.BEGIN_MEASURE AS BeginStationNum
+	,tbl.END_MEASURE AS EndStationNum
+	,24 AS HCAType
+FROM CTE
+JOIN ARC_HCA_CA_SEGMENT_V tbl ON cte.ROUTE_ID = tbl.ROUTE_ID
+AND tbl.DIRECT_CNW_AFF_LF = 'Y'
+UNION
+SELECT DISTINCT  tbl.EVENT_ID SourceId
+	,tbl.ROUTE_ID StationSeriesID
+	,EffectiveStartDate
+	,EffectiveEndDate
+	,tbl.Comments
+	,tbl.BEGIN_MEASURE AS BeginStationNum
+	,tbl.END_MEASURE AS EndStationNum
+	,25 AS HCAType
+FROM CTE
+JOIN ARC_HCA_CA_SEGMENT_V tbl ON cte.ROUTE_ID = tbl.ROUTE_ID
+AND tbl.INDIRECT_CNW_AFF_LF = 'Y'
+UNION
+SELECT DISTINCT  tbl.EVENT_ID SourceId
+	,tbl.ROUTE_ID StationSeriesID
+	,EffectiveStartDate
+	,EffectiveEndDate
+	,tbl.Comments
+	,tbl.BEGIN_MEASURE AS BeginStationNum
+	,tbl.END_MEASURE AS EndStationNum
+	,26 AS HCAType
+FROM CTE
+JOIN ARC_HCA_CA_SEGMENT_V tbl ON cte.ROUTE_ID = tbl.ROUTE_ID
+AND tbl.DIRECT_ESA_AFF_LF = 'Y'
+UNION
+SELECT DISTINCT  tbl.EVENT_ID SourceId
+	,tbl.ROUTE_ID StationSeriesID
+	,EffectiveStartDate
+	,EffectiveEndDate
+	,tbl.Comments
+	,tbl.BEGIN_MEASURE AS BeginStationNum
+	,tbl.END_MEASURE AS EndStationNum
+	,27 AS HCAType
+FROM CTE
+JOIN ARC_HCA_CA_SEGMENT_V tbl ON cte.ROUTE_ID = tbl.ROUTE_ID 
+AND tbl.INDIRECT_ESA_AFF_LF = 'Y'
+UNION
+SELECT DISTINCT  tbl.EVENT_ID SourceId
+	,tbl.ROUTE_ID StationSeriesID
+	,EffectiveStartDate
+	,EffectiveEndDate
+	,tbl.Comments
+	,tbl.BEGIN_MEASURE AS BeginStationNum
+	,tbl.END_MEASURE AS EndStationNum
+	,36 AS HCAType
+FROM CTE
+JOIN ARC_HCA_CA_SEGMENT_V tbl ON cte.ROUTE_ID = tbl.ROUTE_ID 
+AND tbl.DIRECT_DW_AFF_LF = 'Y'
+UNION
+SELECT DISTINCT  tbl.EVENT_ID SourceId
+	,tbl.ROUTE_ID StationSeriesID
+	,EffectiveStartDate
+	,EffectiveEndDate
+	,tbl.Comments
+	,tbl.BEGIN_MEASURE AS BeginStationNum
+	,tbl.END_MEASURE AS EndStationNum
+	,37 AS HCAType
+FROM CTE
+JOIN ARC_HCA_CA_SEGMENT_V tbl ON cte.ROUTE_ID = tbl.ROUTE_ID 
+AND tbl.INDIRECT_DW_AFF_LF = 'Y'
+

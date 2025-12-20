@@ -1,0 +1,22 @@
+DECLARE @sql NVARCHAR(MAX)
+DECLARE @db NVARCHAR(100) = 'EPCO_IRASv5_GAS_STAGE'
+DECLARE @new_loc NVARCHAR(300) 
+SET @new_loc = '\\dras-util01\DBBackups_Test\' + @db + '.bak'
+DECLARE @old_loc NVARCHAR(300) 
+SET @old_loc = '\\backups.cgy.dynamicrisk.net\DB_Backups_Nightly\SQL2019\Nightly\' + @db + '.bak'
+DECLARE @loc NVARCHAR(300) = @old_loc
+
+SET @sql = 'RESTORE FILELISTONLY  
+FROM DISK = ''' + @loc + '''' 
+
+EXECUTE sp_executesql @sql
+
+SET @sql = 'RESTORE DATABASE ' + @db + '
+FROM DISK = ''' +  @loc + '''
+WITH RECOVERY,
+MOVE ''IRAS_GAS_Data'' TO ''D:\SQLData\' + @db + '.mdf'',   
+MOVE ''IRAS_GAS_Log'' TO ''L:\LogFiles\' + @db + '_Log.ldf'''
+
+EXECUTE sp_executesql @sql
+
+PRINT @loc

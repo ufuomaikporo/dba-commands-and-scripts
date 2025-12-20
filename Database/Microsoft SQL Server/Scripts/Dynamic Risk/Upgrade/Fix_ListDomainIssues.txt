@@ -1,0 +1,62 @@
+SET SERVEROUTPUT ON
+DECLARE 
+    DCId INT := 238;
+    v_TableName VARCHAR2(100) := 'METALLOSS';
+    v_ColumnName VARCHAR2(100) := 'METALLOSSTYPEDOMAINID';  
+    ---- Add new code and Descr
+    v_Code VARCHAR2(1000) := 'External Metal Loss';
+    v_Descr VARCHAR2(1000) := 'External Metal Loss';
+    sql_stmt VARCHAR2(20000);
+    CNT INT;
+BEGIN
+    
+    SELECT COUNT(*) INTO CNT
+    FROM all_tables WHERE table_name = 'TEMPTABLE';
+    
+    IF CNT <> 0 THEN
+        sql_stmt := 'DROP TABLE TempTable';
+        EXECUTE IMMEDIATE sql_stmt;
+    END IF;
+    
+    sql_stmt := 'CREATE TABLE TempTable AS
+    select *  
+    from ListDomain 
+    where code in (select Code from listdomain
+                   where id in (select '|| v_ColumnName ||' from '|| v_TableName ||') 
+                   and DomainCatalogId <>' || DCId || ')
+    AND DomainCatalogId = ' || DCId;
+    
+    EXECUTE IMMEDIATE sql_stmt;
+    
+    sql_stmt := 'UPDATE ' || v_TableName || ' tab
+    SET ' || v_ColumnName || ' = (SELECT DISTINCT t.Id FROM TempTable t
+                                JOIN ListDomain ld
+                                ON t.Code = ld.Code
+                                AND t.DomainCatalogId = ' || DCId ||'
+                                AND tab.' || v_ColumnName ||' = ld.Id)
+    WHERE EXISTS (SELECT DISTINCT t.Id FROM TempTable t
+                                JOIN ListDomain ld
+                                ON t.Code = ld.Code
+                                AND t.DomainCatalogId = ' || DCId ||'
+                                AND tab.' || v_ColumnName ||' = ld.Id)';
+                                
+    EXECUTE IMMEDIATE sql_stmt;
+    
+    IF (v_Code IS NOT NULL AND v_Descr IS NOT NULL) THEN
+    
+        SELECT COUNT(*) INTO CNT
+        FROM ListDomain
+        WHERE DomainCatalogId = DCId
+        AND Code = v_Code;
+        
+        IF CNT = 0 THEN
+            sql_stmt := 'INSERT INTO ListDomain (Id, DomainCatalogId, Code, Descr)
+                        VALUES ((SELECT MAX(Id) + 1 FROM ListDomain), ' || DCId || ', '''|| v_Code || ''', ''' || v_Descr || ''')
+                        ';
+             EXECUTE IMMEDIATE sql_stmt;
+        END IF;
+    END IF;
+    COMMIT;
+
+END;
+/

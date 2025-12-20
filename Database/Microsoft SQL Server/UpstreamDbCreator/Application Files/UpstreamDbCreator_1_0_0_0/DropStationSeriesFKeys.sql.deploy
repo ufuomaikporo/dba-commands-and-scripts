@@ -1,0 +1,19 @@
+DECLARE @sql nvarchar(max)
+DECLARE r_cursor CURSOR FOR
+	SELECT DropScript FROM SchemaChanges
+
+OPEN r_cursor
+	FETCH FROM r_cursor INTO @sql
+
+	WHILE @@FETCH_STATUS = 0
+	BEGIN
+		EXEC sp_executesql @sql
+		FETCH FROM r_cursor INTO @sql
+	END
+
+CLOSE r_cursor
+DEALLOCATE r_cursor
+
+
+
+

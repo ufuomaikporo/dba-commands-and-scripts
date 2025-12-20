@@ -1,0 +1,49 @@
+# Cache and I/O
+DB_BLOCK_SIZE=8192
+
+# Cursors and Library Cache
+OPEN_CURSORS=500
+
+# Diagnostics and Statistics
+DIAGNOSTIC_DEST='C:\app\Oracle'
+
+#Recovery Area
+DB_RECOVERY_FILE_DEST='B:\Oracle\fast_recovery_area\'
+DB_RECOVERY_FILE_DEST_SIZE=13G
+
+# Control File Configuration
+CONTROL_FILES=('C:\app\Oracle\oradata\ORA12CEXT\control01.ctl',
+               'E:\app\Oracle\ORA12CEXT\oradata\control02.ctl',
+               'B:\Oracle\oradata\ORA12CEXT\control03.ctl')
+
+
+# Shared Server
+# Uncomment and use first DISPATCHES parameter below when your listener is
+DISPATCHERS = '(PROTOCOL=TCP)(SERVICE=ORA12CEXTXDB)',
+
+# Miscellaneous
+COMPATIBLE='12.2.0'
+DB_NAME=ORA12CEX  #A default database service will be created using this name
+
+# Distributed, Replication and Snapshot
+DB_DOMAIN='EDDYFINDT.COM'
+REMOTE_LOGIN_PASSWORDFILE=EXCLUSIVE
+
+# Network Registration
+INSTANCE_NAME=ORA12CEXT
+
+# Processes and Sessions
+PROCESSES=320
+
+# Redo Log and Recovery
+FAST_START_MTTR_TARGET=300
+
+# Automatic Undo Management
+UNDO_TABLESPACE='UNDOTBS'
+
+PGA_AGGREGATE_TARGET=4096m
+SGA_TARGET=12288m
+
+
+
+

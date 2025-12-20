@@ -1,0 +1,344 @@
+########################################################################################
+# GENERAL TIPS
+#########################################################################################
+
+-- The listener should be under the LOCAL SYSTEM account otherwise the LSNRCTL utility 
+might not work properly
+
+#############################################################################################
+# CONNECT TO AN ORACLE DATABASE
+#############################################################################################
+
+TNSPING COMMAND
+
+You can use the TNSPING command to test you tnsnames setup. This command only checks that the host, listener and listening ports
+are working correctly and that the tnsname alias has been resolved in the tnsnames.ora file correctly. 
+The command does not check whether you can actually connect to the database
+(i.e the database server could still be shutdown,not in open mode, or the database service name could be incorrect)
+
+---------------------------- Configuring different Oracle Homes ----------------------
+
+-- Session-Level configuration (settings revert back after exiting the command line)
+-- if there are multiple oracle homes within the same host, you will need to configue the
+  Oracle environment by setting it up to connect to the correct Oracle home and bin path. The
+  bin folder contains the oracle command/binary files for running SQL*Plus, RMAN, expdp, impdp, etc
+  
+1) SET ORACLE_SID =DBNAME
+
+2) SET ORACLE_HOME='C:\App\Oracle\product\12.2.0\dbhome_1\'
+
+3) SET PATH=%ORACLE_HOME%/bin;%PATH%
+
+You can set you default ORACLE_SID by creating an ORACLE_SID variable in system properties in windows
+	- search 'edit environment variables'
+	- click on 'New'
+	- set varible name to 'ORACLE_SID'
+	- set variable value to database name
+
+------------------ System-Level configuration (persistent settings)
+
+1) Go to 'System Properties' by typing 'edit environment variables' into the windows search bar
+2) Click on 'Environment Variables' 
+3) In the pop-up window under the section labeled 'System Variables' select the 'Path' variable and click on 'Edit'
+3) In the 2nd pop-up window, move you preferred Oracle home bin path to the top of the list
+4) Click 'Ok' twice on the 2 pop-up windows to save the settings
+ 
+----------------------------------------- Connect Methods ----------------------------------------
+
+--Connect using EZ connect
+
+	Connect username/password@hostname:portnumber/service_name
+
+-- Connect using TNS names (the TNSServiceName variable must be resolved in the tnsnames.ora file)
+
+	Connect username/password@TNSServiceName
+
+#################################################################################
+LISTENER
+##################################################################################--
+
+YOU CAN
+-- Set a listener to listen on more than one port (ex. port 1521 and 1536) by adding the port info 
+    to the listener.ora file for that listener and restarting the listener service
+
+-- Setup an Oracle net service alias to use more than one listener port
+
+--------------------------------- CREATING & DELETING LISTENER MANUALLY -------------------------------
+
+-- It is recommended that you use the Net Configuraton Assistant or Net Manager to create and delete listeners.
+-- Do not delete the default listener until you have first created a new listener
+-- In a cases where you are unable to successfully create a listener using netca the following might be useful
+
+
+---------- STEP 1) Manually create windows service for the Oracle listener
+
+SC CREATE OracleOraDB12Home1TNSListener binpath=ORACLE_HOME\BIN\tnslsnr.exe
+
+--------- STEP 2) USE Oracle Net Configuration Assistant or Net Manager to create the listener on the Oracle end
+
+
+---- You can manually Delete listener service from Windows services (this works for any windows service)
+
+SC DELETE ListenerServiceName 
+
+---------------------------------- LISTENER CONTROL UTILITY COMMANDS ------------------------------------------
+
+-- Enter the following command to open the listener control command prompt
+-- otherwise each command needs to be preceeded by the 'lsnrctl' command
+
+LSNRCTL 
+
+-- each of the follwing commands needs to be followed by the listener name
+  if you want to issue it against a non-default listener
+
+-- Sets the default listener to listener_name
+
+SET CURRENT_LISTENER listener_name
+
+STOP listener_name
+
+START listener_name
+
+-- restarts the listener after reading the listener.ora file to enact new settings
+
+RELOAD listener_name
+
+SERVICES listener_name
+
+STATUS listner_name
+
+------------------------------------ SAMPLE LISTENER FILE -------------------------------------
+# It's recommended to use the actual servername instead of 'localhost' for the 'HOST' parameter 
+
+LISTENER=
+  (DESCRIPTION=
+    (ADDRESS_LIST=
+      (ADDRESS=(PROTOCOL=tcp)(HOST=sale-server)(PORT=1521))
+      (ADDRESS=(PROTOCOL=ipc)(KEY=extproc))
+	 )
+	)
+SID_LIST_LISTENER=
+	(SID_LIST=
+		(SID_DESC=
+		  (GLOBAL_DBNAME=sales.us.acme.com)
+		  (ORACLE_HOME=/oracle10g)
+		  (SID_NAME=sales)
+		)
+		(SID_DESC=
+		  (SID_NAME=plsextproc)
+		  (ORACLE_HOME=/oracle10g)
+		  (PROGRAM=extproc)
+		)
+	)
+
+----------------------------Configure failover For Database Network Service------------------------------------
+
+-- If one listener fails, the net service fails over to the other listener so long
+   as both listeners are running. The Net service name (TXPDB = (DES.....) can be anything.
+   It does not have to be the same as the database service name (SERVICE_NAME = TXPDB)
+-- Multiple Net Services can be configured for the same database service name.
+   use the LOCAL_LISTENER initialization parameter to configure the database for multiple
+   Net Service names (or manually create another net servcie name)
+-- A database can have multiple database service names. Use the DBA_SERVICES 
+   or the V$SERVICES view to see the database service name(s)   ???????
+
+-- The example below is of a database network service that is configured to listen to two different ports
+
+TXPDB =
+  (DESCRIPTION =
+    (ADDRESS_LIST =
+      (FAILOVER = ON)
+      (ADDRESS = (PROTOCOL = TCP)(HOST = WIN-6HE0A9IDPK9)(PORT = 5561))
+      (ADDRESS = (PROTOCOL = TCP)(HOST = WIN-6HE0A9IDPK9)(PORT = 1521))
+    )
+    (CONNECT_DATA =
+      (SERVER = DEDICATED)
+      (SERVICE_NAME = TXPDB)
+    )
+  )
+  
+################################################################################################
+# Managing Database Service name
+################################################################################################
+
+----------------------------------- DBMS_SERVICE Package ----------------------------------- 
+
+-- View active database services
+
+COL name FORMAT A30
+COL network_name FORMAT A30
+
+SELECT service_id, name, network_name FROM gv$active_services;
+
+-- Execute the following procedure to delete a database service name
+
+DBMS_SERVICE.DELETE_SERVICE('ernie.example.com');
+
+-- To start a service
+
+DBMS_SERVICE.START_SERVICE('clone_pdb1', 'clonedb');
+
+-- Create a database service
+
+DBMS_SERVICE.CREATE_SERVICE('clone_pdb1','clone_pdb1',);
+
+----------------------------- ADD a new Oracle Database Service Name --------------------
+
+------ STEP 1) View list of all active database services 
+
+COL name FORMAT A30
+COL network_name FORMAT A30
+
+SELECT service_id, name, network_name FROM gv$active_services;
+
+------ STEP 2) Add a new database service
+
+ALTER SYSTEM SET SERVICE_NAMES='SID.domain.com' SCOPE=SPFILE;
+
+---------------------------- DELETE an Oracle database service -----------------------
+
+------ STEP 1) Check to see if the service is still active (output are current active services)
+
+COL name FORMAT A30
+COL network_name FORMAT A30
+
+SELECT service_id, name, network_name FROM gv$active_services;
+
+
+----- STEP 2) If the db_domain parameter is set to non-empty value, Set it to an empty string and bounce the database.
+				This will allow you to stop the database service so it can be deleted
+
+ALTER SYSTEM SET DB_DOMAIN='' SCOPE=SPFILE;
+
+------ STEP 3) Stop then delete the service (you can also start the service using START_SERVICE subprogram of DBMS_SERVICE package)
+
+EXEC DBMS_SERVICE.STOP_SERVICE(SERVICE_NAME => 'ServiceName');
+EXEC DBMS_SERVICE.DELETE_SERVICE(SERVICE_NAME => 'ServiceName'); 
+
+--------------------------------- ADD/RENAME new dispatcher service ------------------------
+
+---- STEP 1) Find dispatcher info
+
+SET LIN 120
+COL network FORMAT A40
+COL service FORMAT A16
+
+SELECT conf_indx, network, dispatchers, connections, service
+FROM v$dispatcher_config;
+
+----- STEP 2) YOu can add a new dispatcher service based on the previous dispatcher service
+
+ALTER SYSTEM set DISPATCHERS = '(PROTOCOL=TCP)(DISPATCHERS=1)(SESSIONS=1022)(SERVICE=ORA12CXDB)' SCOPE=both;
+
+----- STEP 3) Check if dispatcher service is still running
+
+COL name FORMAT A30
+COL network_name FORMAT A30
+
+SELECT service_id, name, network_name FROM gv$active_services;
+
+----- STEP 4) Stop and or delete the dispatcher service
+
+EXEC DBMS_SERVICE.STOP_SERVICE(SERVICE_NAME => 'ServiceName');
+EXEC DBMS_SERVICE.DELETE_SERVICE(SERVICE_NAME => 'ServiceName'); 
+
+----- STEP 5) BOUNCE the database for the changes to take effect
+
+----------------------------- if listener is not working ---------------------------------
+
+- Configure automatic listener registration by setting up a local listener through tnsnames.ora
+
+- View current local listener
+
+SHOW PARAMETER LOCAL_LISTENER
+
+- Reset local listener to the default
+
+ALTER SYSTEM RESET LOCAL_LISTENER SCOPE=BOTH;
+
+---------- OPTION 1)
+
+-- The following command REGISTERS the database service(s) with the listener at the specified port
+
+ALTER SYSTEM SET LOCAL_LISTENER='(ADDRESS=(PROTOCOL=TCP)(HOST=<yourhostname>)(PORT=1521))' SCOPE =BOTH;
+
+OR to register with multiple listener ports
+
+ALTER SYSTEM 
+SET LOCAL_LISTENER='(ADDRESS_LIST = (ADDRESS=(PROTOCOL=TCP)(HOST=<yourhostname>)(PORT=1521))
+									(ADDRESS=(PROTOCOL=TCP)(HOST=<yourhostname>)(PORT=1521)))' SCOPE =BOTH;
+
+
+--------- OPTION 2)
+
+-- For a dedicated server environment you can use a database service network alias that must be resolved in the tnsnames.ora file.
+	you can basically set the local listener to the net alias created for the database service in the tnsnames file
+
+ALTER SYSTEM SET LOCAL_LISTENER=listener_sales1;
+
+- Local Listener entry in tnsnames.ora file
+
+listener_sales1= 
+ (DESCRIPTION = 
+  (ADDRESS = (PROTOCOL=tcp)(HOST=sales-server)(PORT=1421)))
+
+###########################################################################################################
+# POSSIBLE NETWORK ERRORS 
+###########################################################################################################
+
+--------------------  ERROR) TNS:protocol adapter error 
+
+SOLUTION: 
+1) The database service is not running in windows services
+2) The database is shutdown
+2) make sure the correct enviroment variables have been set (check the ORACLE_SID, ORACLE_HOME and Oracle bin path variables) 
+	- check environment variables with echo command "echo %ORACLE_SID%", "echo %ORACLE_HOME%", "echo %TNS_ADMIN%"
+	- the bin path variable can be checked under the "edit environment variables" (enter into Windows task bar search)
+		section of the control panel on Windows
+
+
+--------------------  ERROR) target host or object does not exist 
+
+SOLUTION: 
+1) The hostname is incorrect in listener.ora file or tnsnames.ora file
+2) The database host server is down. Check if server is up and running with a server ping test
+
+
+--------------------  ERROR) TNS:listener does not currently know of service requested in connect 
+
+SOLUTION: 
+1) Database is shutdown
+2) The service name in tnsname.ora file is wrong
+3) the database service is not registered with the listener (need to manually register the service)
+4) The database service is not running in windows services
+
+--------------------  ERROR) TNS-12541: TNS:no listener
+
+SOLUTION
+1) The listener service is not running
+2) The listening port and listener host information is incorrect
+3) The listener.ora file has improper syntax (cross-check with working listener.ora files)
+
+--------------------   ERROR) TNS: Lost Contact
+
+SOLUTION: 
+1) Check database is running in open mode
+2) Check that the listener is running
+3) Check that the host server can be reached remotely via ping test
+5) Check that the correct port number is assigned in tnsnames.ora file
+6) Check that the listening ports on the database server host are set up correctly
+	- Use "netstat -ano" command in windows to check that the following local addresses have the listening port assigned. The default port 1521 
+	   is used in the example below
+	   
+		Address 1)  TCP    0.0.0.0:1521           0.0.0.0:0              LISTENING       3536
+		Address 2)  TCP    [::]:1521              [::]:0                 LISTENING       3536
+		
+	- ports listed in netstat are already being used by a process. You may need to use a port not already listed in netstat output for the listener
+
+
+--------------------- ERROR) ORA-12518: TNS:listener could not hand off client connection
+
+- Sometimes puting 'localhost' for the hostname parameter of listener in the listener.ora file does not work. 
+In this case you have to either use the IP address or the literal hostname of the machine where the listener resides
+- use the 'LSNRCTL status' command to check that the hostname in the output of the command matches the IP or hostname of the Oracle 
+listener host machine

@@ -1,0 +1,18 @@
+DECLARE @sql nvarchar(max)
+
+DECLARE t_cursor CURSOR FOR
+	SELECT ts.Script FROM dbo.TriggerScripts ts
+
+OPEN t_cursor
+	FETCH NEXT FROM t_cursor INTO @sql
+	
+	WHILE @@FETCH_STATUS = 0
+	BEGIN
+		EXEC sp_executesql @sql
+		FETCH NEXT FROM t_cursor INTO @sql
+	END
+
+CLOSE t_cursor
+DEALLOCATE t_cursor
+
+

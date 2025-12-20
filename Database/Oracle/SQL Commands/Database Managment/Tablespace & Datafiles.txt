@@ -1,0 +1,598 @@
+##########################################################################################
+# Reports on TABLESPACES
+##########################################################################################
+https://docs.oracle.com/cd/F49540_01/DOC/server.815/a67772/tspaces.htm#:~:text=A%20tablespace%20can%20be%20taken,tablespace%20can%20be%20brought%20online.
+------------------------------------- Recommendations ---------------------------------------
+
+- Automatic segment space management
+- Local extent management for tablespaces with a lot of DML operations compared to reads
+
+-------------------------------- VIEW TOTAL USED SPACE IN DATABASE  --------------------------
+
+--------------- Total Used space
+SELECT ROUND(sum(bytes)/1000/1024, 2) size_in_mb FROM dba_segments;
+
+--------------- Total used space by tablespace
+BREAK ON REPORT
+COMPUTE SUM OF "Size (MB)" ON REPORT
+COL tablespace_name FORMAT A35
+
+SELECT tablespace_name, ROUND(sum(bytes)/1000/1024, 2) AS "Size (MB)"
+FROM dba_segments
+GROUP  BY tablespace_name
+ORDER BY 2 DESC;
+
+CLEAR BREAKS;
+
+--------- Total used space by schema owner (see how much space is used by each user)
+BREAK ON REPORT
+COMPUTE SUM OF "Size (MB)" ON REPORT
+COL owner FORMAT A35
+
+SELECT owner, ROUND(sum(bytes)/1000/1024, 2) AS "Size (MB)"
+FROM dba_segments
+GROUP  BY owner
+ORDER BY 2 DESC;
+
+CLEAR BREAKS;
+
+REM---------------------------VIEW DATAFILES IN TABLESPACE-----------------------------
+  
+-- For data files in permanent tablespaces
+
+SET PAGES 100 LINES 150
+COLUMN file_name FORMAT A50
+COL tablespace_name FORMAT A20
+
+SELECT tablespace_name, file_id, file_name, (bytes/1024/1024) size_mb, 
+       (maxbytes/1024/1024) max_size_mb
+FROM dba_data_files;
+
+-- For temp files in temporary tablespaces
+
+SET PAGESIZE 100 LINES 150
+COLUMN file_name FORMAT A50
+
+SELECT tablespace_name, file_id, file_name, (bytes/1024/1024) size_mb, 
+       (maxbytes/1024/1024) max_size_mb
+FROM dba_temp_files;
+
+----------------------Check if a PDB is in local_undo mode--------------------
+
+-- Check if a tablespace is in local undo mode. Refer to 
+https://oracle-base.com/articles/12c/multitenant-local-undo-mode-12cr2 for steps
+ on switching between local and shared undo mode
+
+column property_name format a30
+column property_value format a30
+
+SELECT property_name, property_value
+FROM   database_properties
+WHERE  property_name = 'LOCAL_UNDO_ENABLED';
+
+
+################################################################################
+---------------------------Advanced Tablespace queries---------------------------
+################################################################################
+
+--  View tablespace name, max tablespace size in MB, total used space for 
+   tablespace in MB, current percentage of free space, and count of files 
+   associated with each tablespace
+
+/* DO NOT USE
+SET PAGES 9999 LINE 200
+COL tablespace_name FORMAT A25 
+COL UsedSpace_mb HEADING "Used|Space(MB)"
+COL num_of_data_files HEADING "Num of|Datafiles"
+COL current_size_mb HEADING "Current|Datafile|Size(MB)"
+COL free_space_mb HEADING "Free|Space(MB)"
+COL percent_free HEADING "Free|Space(%)"
+COL max_size_mb HEADING "Max|Datafile|Size(MB)"
+
+SELECT df.tablespace_name, 
+	   COUNT(*) num_of_data_files, 
+	   COALESCE(seg.UsedSpace_mb, 0)/1024/1024 AS UsedSpace_mb,
+	   SUM(df.bytes)/1024/1024 Current_size_mb,
+	   (SUM(df.bytes) - COALESCE(seg.UsedSpace_mb, 0))/1024/1024 Free_Space_mb,
+	   ROUND((SUM(df.bytes) - COALESCE(seg.UsedSpace_mb, 0))/SUM(df.bytes) * 100, 2) AS percent_free,
+	   CASE 
+			WHEN SUM(maxbytes)/1000/1024 = 0 THEN TO_CHAR(SUM(df.bytes)/1024/1024)
+			WHEN SUM(maxbytes)/1000/1024 >= 33554.416 THEN 'UNLIMITED'
+			ELSE TO_CHAR(ROUND(SUM(maxbytes)/1024/1024, 2))
+		END max_size_mb
+FROM dba_data_files df
+LEFT JOIN (SELECT tablespace_name, sum(bytes) AS UsedSpace_mb
+			FROM dba_segments
+			GROUP BY tablespace_name) seg
+	ON seg.tablespace_name = df.tablespace_name
+GROUP BY df.tablespace_name, seg.usedSpace_mb
+ORDER BY 1; 
+*/
+
+----------------ALTERNATIVE (MORE ACCURATE) QUERY TO GET SIZE OF DATAFILES AND UNUSED SPACE ('Savings')
+
+-- new_val directive causes value from column 'value' to be stored in variable 'blksize'
+
+SET PAGES 1000
+SET LIN 200
+SET VERIFY OFF
+COLUMN file_name FORMAT A65
+COLUMN UsedMB FORMAT 999,999.99 HEADING "Smallest|Size|Poss.(MB)"
+COLUMN CurrentSizeMB FORMAT 999,999 HEADING "Current|Size(MB)"
+COLUMN MaxSize FORMAT A15 HEADING "Max|Size(MB)"
+COLUMN FreeSpace  FORMAT 999,999 HEADING "Unused|Space(MB)"
+COLUMN freePerc FORMAT 999 HEADING "Free|Space(%)"
+COLUMN value NEW_VAL blksize
+SELECT value FROM v$parameter WHERE name = 'db_block_size';
+
+SELECT file_name,
+       ROUND((nvl(hwm,1)*&&blksize)/1024/1024, 2) UsedMB,
+       ROUND(blocks*&&blksize/1024/1024, 2) CurrentSizeMB,
+       CASE
+			WHEN ROUND(maxbytes/1024/1024) >= 33554431 THEN 'UNLIMITED'
+			ELSE TO_CHAR(ROUND(maxbytes/1024/1024), '999,999')
+	   END MaxSize,
+       ROUND( blocks*&&blksize - nvl(hwm,1)*&&blksize)/1024/1024 FreeSpace,
+	   ROUND(( blocks*&&blksize - nvl(hwm,1)*&&blksize )/(blocks*&&blksize) * 100, 2)freePerc
+FROM dba_data_files a,
+     ( SELECT file_id, max(block_id+blocks-1) hwm
+         FROM dba_extents
+        GROUP by file_id ) b
+WHERE a.file_id = b.file_id(+)
+UNION
+SELECT file_name,
+       ROUND( (nvl(hwm,1)*&&blksize)/1024/1024, 2) UsedMB,
+       ROUND( blocks*&&blksize/1024/1024, 2) CurrentSizeMB,
+       CASE
+			WHEN ROUND(maxbytes/1024/1024) >= 33554431 THEN 'UNLIMITED'
+			ELSE TO_CHAR(ROUND(maxbytes/1024/1024), '999,999')
+	   END MaxSize,
+       ROUND( blocks*&&blksize - nvl(hwm,1)*&&blksize)/1024/1024 FreeSpace,
+	   ROUND(( blocks*&&blksize - nvl(hwm,1)*&&blksize )/(blocks*&&blksize) * 100, 2)freePerc
+FROM dba_temp_files a,
+     ( SELECT file_id, max(block_id+blocks-1) hwm
+         FROM dba_extents
+        GROUP by file_id ) b
+WHERE a.file_id = b.file_id(+)
+ORDER BY 3 DESC;
+
+------------------------ COPY NON-ORACLE MAINTAINED TABLESPACE DEFINITIONS --------------
+
+SELECT 'CREATE '|| CASE WHEN dt.bigfile = 'YES' THEN 'BIGFILE ' END|| 'TABLESPACE ' || df.tablespace_name || CHR(10) ||
+'DATAFILE '''|| df.file_name|| '''' || CHR(10) ||
+'SIZE ' ||
+CASE 
+	WHEN CEIL(COALESCE(seg.UsedSpace_mb, 0)/1024/1024) < 5 THEN 5
+	ELSE CEIL(COALESCE(seg.UsedSpace_mb, 0)/1024/1024)
+END
+|| 'M ' ||
+CASE
+	WHEN SUM(maxbytes)/1000/1024 = 0 THEN NULL
+	WHEN SUM(maxbytes)/1000/1024 < 33554.416 
+		THEN 'AUTOEXTEND ON NEXT ' || 
+			ROUND((SUM(maxbytes)/1024/1024)*0.2)||
+			'M MAXSIZE ' || SUM(maxbytes)/1024/1024 || 'M '
+	WHEN SUM(maxbytes)/1000/1024 >= 33554.416 
+		THEN 'AUTOEXTEND ON NEXT ' || 
+		CASE 
+			WHEN ROUND(SUM(df.bytes)/1024/1024*0.3) < 10 THEN 10
+			ELSE ROUND(SUM(df.bytes)/1024/1024*0.3)
+		END|| 'M MAXSIZE UNLIMITED' 
+	ELSE NULL
+END	
+|| CHR(10) ||
+'EXTENT MANAGEMENT '|| dt.extent_management || 
+CASE WHEN dt.allocation_type = 'SYSTEM' THEN ' AUTOALLOCATE'
+	WHEN dt.allocation_type = 'UNIFORM' THEN ' UNIFORM SIZE '|| dt.initial_extent/1024/1024 || 'M'
+END ||	CHR(10) ||
+'SEGMENT SPACE MANAGEMENT ' || dt.segment_space_management AS Create_Tablespace_ddl
+FROM dba_data_files df
+LEFT JOIN dba_tablespaces dt
+ON df.tablespace_name = dt.tablespace_name
+LEFT JOIN (SELECT tablespace_name, sum(bytes) AS UsedSpace_mb
+			FROM dba_segments
+			GROUP BY tablespace_name) seg
+	ON seg.tablespace_name = df.tablespace_name
+WHERE NOT REGEXP_LIKE (df.tablespace_name, 'SYSTEM|SYSAUX|USERS|UNDO')
+AND df.tablespace_name like 'ETP%' OR df.tablespace_name = 'TEST'
+GROUP BY df.tablespace_name, 
+         dt.bigfile,
+		 df.file_name, 
+		 dt.segment_space_management, 
+		 dt.extent_management,
+		 dt.initial_extent, 
+		 dt.allocation_type,
+		 seg.usedSpace_mb; 
+
+--------------------------------------------------------------------------------
+
+-- ***This query needs to be reviewed View the size of each datafile plus the total size of the tablespace and extent
+   management
+
+SET PAGES 999 LINES 200
+COL tablespace_name FORMAT A15
+COL file_name FORMAT A50
+BREAK ON tablespace_name
+
+SELECT tablespace_name, 
+       file_name, 
+       bytes/POWER(1024,2) datafile_size_mb,
+       tablespace_size_mb, 
+extent_management
+FROM dba_data_files
+ JOIN dba_tablespaces 
+   USING (tablespace_name)
+ JOIN (SELECT tablespace_name,
+       ROUND(SUM(bytes)/POWER(1024,2)) tablespace_size_mb
+FROM dba_data_files
+GROUP BY tablespace_name)
+  USING (tablespace_name)
+UNION
+SELECT tablespace_name, 
+       file_name, 
+       bytes/POWER(1024,2) datafile_size_mb,
+       tablespace_size_mb, extent_management
+FROM dba_temp_files
+JOIN dba_tablespaces 
+   USING (tablespace_name)
+ JOIN (SELECT tablespace_name,
+       ROUND(SUM(bytes)/POWER(1024,2)) tablespace_size_mb
+FROM dba_temp_files
+GROUP BY tablespace_name)
+  USING (tablespace_name)
+ORDER BY 1;
+
+CLEAR BREAKS;
+
+#################################################################################
+Local and Dictionary Manged Tablespaces
+#################################################################################
+
+-- You can create bigfile or smallfile (default) tablespace. smallfile tablespaces have a datafile size limit 
+
+REM-------------CREATING A DICTIONARY MANAGED TABLESPACE---------------------------------
+
+CREATE TABLESPACE test
+DATAFILE 'C:\CHAPTERS\C_DRIVE\data\test.dbf' SIZE 5M
+AUTOEXTEND ON NEXT 2M MAXSIZE 10M
+MINIMUM EXTENT 200K                        
+EXTENT MANAGEMENT DICTIONARY
+DEFAULT STORAGE 
+ (INITIAL 200K                                   
+  NEXT 200K
+  PCTINCREASE 0
+  MINEXTENTS 2
+  MAXEXTENTS 25);
+
+-- minimum extent size allocated to an object (only applies to dictionary managed tablespaces)
+-- INITAL 200K is the size of the first extent allocated to an object
+-- NEXT 200K is the size of the next extent allocated
+-- PCTINCREASE is the percent increase in size of each subsequent extent after the second extent is allocated (on third extent and so forth)
+REM--------cannot specify PCTINCREASE for rollback segments. Rollback segments have a PCTINCREASE of 0
+-- MINEXTENTS is the minimum number of extents allocated when an object is created (only applies to dictionary managed tablespaces)
+-- MAXEXTENTS is the maximum number of extents allocated for objects (only applies to dictionary managed tablespaces)
+
+REM----------------------CREATING LOCALLY MANGED TABLESPACES----------------------------
+
+-- SEGMENT SPACE MANAGEMENT AUTO sets up a tablespace for Automatic Segment Space Management 
+   (ASSM). This maintains the segment space allocations info within the object's segement
+   itself and manages the pctfree and pctused values automatically. Setting it to MANUAL
+   maintains the segment space allocation info in the data dictionary. You can set pctfree
+   and pctused in this case. 
+
+CREATE TABLESPACE test
+DATAFILE 'C:\CHAPTERS\C_DRIVE\data\test.dbf' SIZE 5M
+AUTOEXTEND ON NEXT 2M MAXSIZE 10M
+EXTENT MANAGEMENT LOCAL AUTOALLOCATE
+SEGMENT SPACE MANAGEMENT AUTO;
+
+CREATE TABLESPACE test
+DATAFILE 'C:\CHAPTERS\C_DRIVE\data\test.dbf' SIZE 5M REUSE
+AUTOEXTEND ON NEXT 2M MAXSIZE 10M
+EXTENT MANAGEMENT LOCAL UNIFORM SIZE 2m
+SEGMENT SPACE MANAGEMENT AUTO; -- AUTO is the default
+
+CREATE TABLESPACE stocks 
+DATAFILE 'C:\CHAPTERS\C_DRIVE\datastock1.dbf' SIZE 10M, 
+         'C:\CHAPTERS\C_DRIVE\datastock2.dbf' SIZE 10M,
+         'C:\CHAPTERS\C_DRIVE\datastock3.dbf' SIZE 10M; 
+
+--UNIFORM specifies uniform extent allocation (uniform in size)
+--AUTOALLOCATE allows the database to choose the extent sizes which may not be uniform (DEFAULT)
+--SEGMENT SPACE MANAGEMNT only applies to permanent, locally managed tablespaces
+--EXTENT MANAGEMENT is always LOCAL for locally managed tablespaces
+--REUSE specifies that the datafile should be overwritten if it already exists
+REM-----Lets you specify whether Oracle Database should track the used 
+REM------and free space in the tablespace segments using free lists or bitmaps
+REM------AUTO is for bitmap (recommended)
+REM------MANUAL is for free lists (need to specify PCTUSED, FREELIST and FREELIST GROUPS in this case)
+
+##################################################################################
+Modify Tablespace
+##################################################################################
+
+-----------------------Adding/Resizing Renaming datafiles to a tablespace-----------------------------
+
+-- Add data file
+
+ALTER TABLESPACE stocks 
+   ADD DATAFILE 'stock4.dat' SIZE 10M REUSE; 
+
+-- Resize data file
+
+ALTER DATABASE [DATAFILE|TEMPFILE] 'C:\app\Oracle\oradata\Exercise1TS.dbf' RESIZE 10M;
+
+-- Change autoextend setting and maxsize
+ALTER DATABASE DATAFILE 'C:\app\Oracle\oradata\ Exercise1TS.dbf'
+AUTOEXTEND ON NEXT 200M MAXSIZE 5G;
+
+-------------------------Taking a tablespace offline--------------------------------------
+
+-- datafiles that are not in the SYSTEM or UNDO tablspace can be taken offline to allow
+  you to open the database or pdb while the datafile is being restored 
+
+WARNING:
+If you must take a tablespace offline, use the normal (OFFLINE NORMAL) option (the default) if possible; 
+this guarantees that the tablespace will not require recovery to come back online, even if you 
+reset the redo log sequence (using an ALTER DATABASE OPEN RESETLOGS statement after incomplete media recovery) 
+before bringing the tablespace back online.  
+
+ALTER TABLESPACE tbs2 OFFLINE IMMEDIATE; 
+
+-----------------------------Take Datafile offline------------------------------
+
+ALTER DATABASE DATAFILE file# OFFLINE;
+
+OR
+
+ALTER DATABASE DATAFILE 'C:\APP\ORACLE\ORADATA\ORANT12C\USERS.DBF' OFFLINE;
+
+-----------------------------Default Tablespace---------------------------------
+
+-- View default tablespace
+
+SELECT property_value FROM database_properties 
+WHERE property_name = 'DEFAULT_PERMANENT_TABLESPACE;
+
+-- Set you default permanent tablespace
+
+ALTER DATABASE DEFAULT TABLESPACE users;
+
+###########################################################################
+DATA FILES
+###########################################################################
+
+---------------------To view location of all datafiles and tempfiles----------------------------
+
+SELECT name FROM v$datafile
+UNION 
+SELECT name FROM v$tempfile
+ORDER BY 1;
+
+--FOR CDB and non-CDB
+
+SELECT name FROM v$datafile
+UNION 
+SELECT name FROM v$tempfile
+ORDER BY 1;
+
+-----------------------to view data file info-------------------- ---------
+
+- including tablespace, location, etc
+
+SET LIN 120
+SET PAGESIZE 100
+COL file_name FORMAT A50
+COL tablespace_name FORMAT A20
+
+SELECT tablespace_name, file_name, bytes/1024/1024 size_mb
+FROM dba_data_files;
+
+------------------------------------ Change size of datafile --------------
+
+----- increase datafile size
+ALTER DATABASE DATAFILE 'D:\ORADATA\ORA19C22\USERS.DBF' RESIZE 500M;
+
+----- increase datafile size limit
+ALTER DATABASE DATAFILE 'C:\ORACLE\ORADATA\IDMAKER\DMKR_ASLINE.DBF' AUTOEXTEND ON [NEXT 200M] MAXSIZE 4096M
+
+----Remove the size limit
+ALTER DATABASE DATAFILE 'C:\ORACLE\ORADATA\IDMAKER\DMKR_ASLINE.DBF' AUTOEXTEND ON MAXSIZE UNLIMITED
+
+
+#######################################################################################################
+-- RENAME/MOVE A DATAFILE
+#######################################################################################################
+
+-- You can move a datafile online, offline or with RMAN. 
+- SYSTEM, UNDO and singular temporary datafiles can only be moved offline (must shutdown the database and put it in mount mode) 
+
+https://oracle-base.com/articles/misc/renaming-or-moving-oracle-files
+
+SELECT name FROM v$datafile;
+
+---------------------------  Online Move/Rename (For 12c and above) --------------------
+
+-- The new folder location must be created before executing the command 
+
+ALTER DATABASE MOVE DATAFILE 'D:\OldFilePath' TO 'D:\NewFilePath'
+
+------------------------------------- Offline Move (Older method verions before 12c) ----------------------------
+
+1) ALTER TABLESPACE tablespaceName OFFLINE;
+2) Move/rename the files in the OS
+	linux > mv 'oldFilePath' 'newFilePath'
+	windows > copy 'oldFilePath' 'newFilePath'
+	windows > rename 'oldFilePath' 'newFilePath' 
+3) ALTER DATABASE RENAME FILE 'oldFilePath' TO 'newFilePath'
+4) ALTER TABLESPACE tablespaceName ONLINE;
+
+OR
+
+1) shutdown the database ------> SHUTDOWN IMMEDIATE
+2) start the database in mount mode ------> STARTUP MOUNT
+3) move the files to the new locations in the OS
+4) Rename the datafile ---> ALTER DATABASE RENAME FILE '/oracle1/dbs/db3.f' TO '/oracle2/dbs/db3.f';
+5) ALTER DATABASE OPEN
+
+#############################################################################################
+# DROPPING TABLESPACES
+#############################################################################################
+
+------------------------Droping Tablespaces and datafiles------------------------
+
+-- Drop tablespace and delete associated datafiles
+
+DROP TABLESPACE tbs_02 INCLUDING CONTENTS AND DATAFILES;
+
+-- Drop a tablespace, it's datafiles, and well as all referential integrity constraints 
+that refer to primary and unique keys within the tablespace. Only use this option when certain you will no
+longer need any foreign keys referencing objects in the tablespace to be dropped 
+
+DROP TABLESPACE tbs_01 INCLUDING CONTENTS AND DATAFILES CASCADE CONSTRAINTS;
+
+-- Drop a datafile
+
+ALTER TABLESPACE users DROP DATAFILE 5;
+
+OR
+
+ALTER TABLESPACE users DROP DATAFILE 'C:\APP\ORACLE\ORADATA\ORANT12C\USERS01.DBF';
+
+-- Switching from one UNDO tablespace to another UNDO tablespace.
+
+ALTER SYSTEM SET UNDO_TABLESPACE = undotbs_02;
+
+
+--------------------------------- DELETING NON-SDE GEODATABASE TABLESPACE ----------------------------------
+
+
+-- For Example if we want to drop a geodatabase schema called 'ATCO_UPDM_PUB' 
+
+--############# STEP 1) Find Secondary domain indexes (these are created by ESRI if ArcGis was used to import the tablespace objects)
+
+SET PAGES 10000 LIN 150
+COL owner FORMAT A20
+COL index_name FORMAT A30
+COL table_name FORMAT A25
+COL table_owner FORMAT A20
+COL tablespace_name FORMAT A25
+
+SELECT owner, index_name, table_owner, table_name, tablespace_name 
+FROM all_indexes 
+WHERE index_type='DOMAIN' AND table_owner='ATCO_UPDM_PUB';
+
+--################ STEP 2) Drop Secondary Domain indexes
+
+SELECT 'DROP INDEX ' || table_owner || '.' || index_name || ';'
+FROM all_indexes
+WHERE index_type='DOMAIN' AND table_owner='ATCO_UPDM_PUB';
+
+
+SELECT 'DROP MATERIALIZED VIEW ' || owner || '.' || mview_name || ';'
+FROM dba_mviews
+WHERE owner = 'ATCO_UPDM_PUB';
+
+--####################### STEP 3) Drop as many objects or materialized views as needed for tablespace drop to work
+
+DROP TABLESPACE ATCO_UPDM_PUB INCLUDING CONTENTS AND DATAFILES;
+
+-------------------------------------- DROPPNG THE SDE TABLESPACE --------------------------------------
+
+-- The SDE tablespace is the main geodatabase tablespace in an Oracle database. It contains info being 
+used by other geodatabase schemas/tablespaces. So before dropping the SDE tablespace you should drop all 
+Geodatabse tablespaces first
+
+--############# STEP 1) Find Secondary domain indexes
+
+SET PAGES 10000
+SET LIN 150
+COL owner FORMAT A20
+COL index_name FORMAT A30
+COL table_name FORMAT A25
+COL table_owner FORMAT A20
+COL tablespace_name FORMAT A25
+
+SELECT owner, index_name, table_owner, table_name, tablespace_name 
+FROM all_indexes 
+WHERE index_type='DOMAIN' AND table_owner='SDE';
+
+--################ STEP 2) Drop Secondary Domain indexes
+
+SELECT 'DROP INDEX ' || table_owner || '.' || index_name || ';'
+FROM all_indexes
+WHERE index_type='DOMAIN' AND table_owner='SDE';
+
+--####################### STEP 3) Drop as many objects or materialized views as needed for tablespace drop to work (MAY NOT NEED TO DO THIS)
+
+SELECT 'DROP ' || object_type || ' ' || owner || '.' || object_name || ';'
+FROM dba_objects
+WHERE owner = 'SDE';
+
+SELECT 'DROP MATERIALIZED VIEW ' || owner || '.' || mview_name || ';'
+FROM dba_mviews
+WHERE owner = 'ETP_ATLAS_PROD';
+
+--###################### STEP 4) Drop tablespace
+
+DROP TABLESPACE ATCO_UPDM_PUB INCLUDING CONTENTS AND DATAFILES;
+
+
+#########################################################################################
+# SHRINK DATAFILES
+#########################################################################################
+
+SET VERIFY OFF
+SET PAGES 1000
+SET LIN 200
+COLUMN file_name FORMAT a60 WORD_WRAPPED
+COLUMN UsedMB FORMAT 99,999,999.99 HEADING "Smallest|Size|Poss.(MB)"
+COLUMN CurrentSizeMB FORMAT 99,999,999.99 HEADING "Current|Size(MB)"
+COLUMN FreeSpace  FORMAT 99,999,999 HEADING "Poss.|Savings(MB)"
+COLUMN freePerc FORMAT A15 HEADING "Free|Percentage"
+BREAK ON report
+
+-- STEP 1: To Check Database block size
+
+COLUMN value new_val blksize
+SELECT value FROM v$parameter WHERE name = 'db_block_size';
+
+
+-- STEP 2: Check how much space can be reclaimed 
+
+SELECT file_name,
+       ROUND( (nvl(hwm,1)*&&blksize)/1024/1024, 2) UsedMB,
+       ROUND( blocks*&&blksize/1024/1024, 2) CurrentSizeMB,
+       ROUND( blocks*&&blksize - nvl(hwm,1)*&&blksize)/1024/1024 FreeSpace,
+	   TO_CHAR(ROUND(( blocks*&&blksize - nvl(hwm,1)*&&blksize )/(blocks*&&blksize) * 100)) || '%' freePerc
+FROM dba_data_files a,
+     ( SELECT file_id, max(block_id+blocks-1) hwm
+         FROM dba_extents
+        GROUP by file_id ) b
+WHERE a.file_id = b.file_id(+)
+ORDER BY 3 DESC;
+
+-- You can also add condition if needs to be checked for a specific tablespace
+
+-- STEP 3: Script to reclaim unused space from the datafiles 
+
+SET pages 10000
+SET lines 300
+COLUMN cmd FORMAT A300 WORD_WRAPPED
+
+SELECT 'ALTER DATABASE DATAFILE '''||file_name||''' RESIZE ' || 
+		CASE 
+			WHEN CEIL(nvl(hwm,1)*&&blksize/1024/1024) > 70 THEN CEIL(nvl(hwm,1)*&&blksize/1024/1024)
+			ELSE 70
+		END
+		|| 'M;' cmd
+FROM dba_data_files a,
+     ( SELECT file_id, max(block_id+blocks-1) hwm
+         FROM dba_extents
+        GROUP by file_id ) b
+WHERE a.file_id = b.file_id(+)
+	AND ROUND( blocks*&&blksize - nvl(hwm,1)*&&blksize )/(blocks*&&blksize) * 100 > 5
+	AND (hwm IS NOT NULL AND nvl(hwm,1)*&&blksize/1024/1024 > 8)
+	AND NOT REGEXP_LIKE(a.tablespace_name, 'UNDO|SYSTEM|SYSAUX|USER')
+		ORDER BY hwm DESC;
+	

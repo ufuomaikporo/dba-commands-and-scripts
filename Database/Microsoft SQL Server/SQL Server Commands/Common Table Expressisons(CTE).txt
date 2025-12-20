@@ -1,0 +1,63 @@
+
+#####################################################################################
+# Recursive CTE
+######################################################################################
+Example: The recursive query below works for the table and sample data 
+
+CREATE TABLE Employees (Id int, name nvarchar(100), department nvarchar(100),
+managerId int, managerName nvarchar(100))
+
+insert into Employees values (124, 'John Doe',	'IT',	135,	'Jane Miller'),
+(135, 'Jane Miller','HR',	146,	'Sarah Smith'),
+(146, 'Sarah Smith','CEO',	NULL,NULL);
+
+
+WITH
+  cteReports --(Id, EmpName, MgrID, EmpLevel)
+  AS
+  (
+/*
+-->>>>>>>>>>Block 1>>>>>>>>>>>>>>>>>
+ In a recursuve CTE, this block is called an [Anchor]
+ The query finds all root nodes. In this example root nodes are defined by WHERE ManagerID IS NULL
+ Emplevel will sort based on ranking within the hierarchy
+*/
+    SELECT Id, Name, managerId, EmpLevel = 1
+    FROM Employees
+    WHERE ManagerId IS NULL
+    UNION ALL
+/*
+-->>>>>>>>>>Block 2>>>>>>>>>>>>>>>>>    
+This is the recursive expression of the rCTE. On the first "execution" it will query data in the Employees
+table relative to the [Anchor] in defined in block 1. This will produce a resultset, we will call it R{1} 
+which is joined to the Employees table as defined by the hierarchy. Subsequent "executions" of this block 
+will reference R{n-1}
+*/
+    SELECT e.Id, e.Name, e.ManagerId,
+      r.EmpLevel + 1
+    FROM Employees e
+      INNER JOIN cteReports r
+        ON e.ManagerID = r.Id
+-->>>>>>>>>>Block 2>>>>>>>>>>>>>>>>>
+  )
+SELECT Id,
+  Name,
+  EmpLevel,
+  (SELECT Name FROM Employees
+    WHERE Id = cteReports.ManagerId) AS Manager
+FROM cteReports
+ORDER BY EmpLevel, ManagerId
+
+#########################################################################################
+# Delete data using a subquery
+#########################################################################################
+
+-- The resulting data from the CTE subquery will be deleted from the FKHeirarchy table
+
+WITH CTE AS
+(SELECT *
+FROM FKHeirarchy h
+WHERE EXISTS (SELECT * FROM ##ProblemTables p WHERE p.ParentTable = h.ParentTable
+AND p.ChildTable = h.ChildTable)
+)
+DELETE FROM CTE 

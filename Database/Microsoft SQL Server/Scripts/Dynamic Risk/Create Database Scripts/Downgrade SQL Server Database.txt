@@ -1,0 +1,13 @@
+Downgrade a SQL Server Database
+
+STEP 1) Go to "Task --> Generate scripts" and go through the wizard to generate a script to re-create the database
+      Choose 'Script entire database and all objects'
+
+STEP 2) Under the 'Set scripting options' section you can choose the file name and destination for the script.
+	Then click on 'Advanced' to choose the contents and parameters of the script. Go through parameter to make sure
+   the script is generated the way you would like. If the database being scripted is too large you may have to choose 
+   the 'Schema' option  under 'Types of data to script' to generate a script for just the database schema without any data
+	 
+STEP 3) if the 'Schema' option was choosen in STEP 2) You need to use the import-export feature to export the data from the old 
+     database to the new database. Using "Task >> Export Data". go through the import-export wizard and choose 
+	 'Microsoft OLE DB Provider for SQL Server' for the 'data source' and destination if it is a SQL Server to SQL Server export

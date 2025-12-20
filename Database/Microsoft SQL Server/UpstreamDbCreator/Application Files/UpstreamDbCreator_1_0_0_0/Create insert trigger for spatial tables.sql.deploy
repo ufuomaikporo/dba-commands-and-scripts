@@ -1,0 +1,48 @@
+-- create the insert trigger for spatial tables
+
+DECLARE @sql nvarchar(max)
+
+DECLARE t_cursor CURSOR FOR
+	SELECT 'Create TRIGGER ti_' + Table_name + ' ON ' + Table_Name + ' AFTER INSERT AS
+	IF EXISTS(SELECT * FROM INSERTED)
+	BEGIN
+		UPDATE ' + Table_Name + '
+		SET LastModByUserId = SUSER_SNAME(), 
+			LastModDatetime = GETDATE(),
+			CreatedUser = SUSER_SNAME(),
+			CreatedDate = GETDATE()
+		FROM ' + Table_Name + ' AS t, INSERTED d
+		WHERE t.OBJECTID = d.OBJECTID;
+	END;' AS Script
+
+	FROM INFORMATION_SCHEMA.Columns c 
+	Where c.Column_Name = 'shape' AND Table_Name NOT IN (
+		SELECT Table_Name FROM (
+		SELECT [so].[name] AS [trigger_name],
+		USER_NAME([so].[uid]) AS [trigger_owner],
+		USER_NAME([so2].[uid]) AS [table_schema],
+		OBJECT_NAME([so].[parent_obj]) AS [table_name],
+		OBJECTPROPERTY( [so].[id], 'ExecIsUpdateTrigger') AS [isupdate],
+		OBJECTPROPERTY( [so].[id], 'ExecIsDeleteTrigger') AS [isdelete],
+		OBJECTPROPERTY( [so].[id], 'ExecIsInsertTrigger') AS [isinsert],
+		OBJECTPROPERTY( [so].[id], 'ExecIsAfterTrigger') AS [isafter],
+		OBJECTPROPERTY( [so].[id], 'ExecIsInsteadOfTrigger') AS [isinsteadof],
+		OBJECTPROPERTY([so].[id], 'ExecIsTriggerDisabled') AS [disabled] 
+		FROM sysobjects AS [so]
+		INNER JOIN sysobjects AS so2 ON so.parent_obj = so2.Id
+		WHERE [so].[type] = 'TR') tmp
+		where Table_Name IN (SELECT Table_Name FROM INFORMATION_SCHEMA.Columns c Where c.Column_Name = 'shape')
+		AND trigger_name LIKE 'ti%'
+	)
+	AND table_name NOT IN ('GDB_ITEMS', 'STATIONSERIES2017', 'NODECONNECTIONFLOWDIRECTION')
+
+OPEN t_cursor
+	FETCH NEXT FROM t_cursor INTO @sql
+
+	WHILE @@FETCH_STATUS = 0
+	BEGIN
+		EXEC sp_executesql @sql
+		FETCH NEXT FROM t_cursor INTO @sql
+	END
+CLOSE t_cursor
+DEALLOCATE t_cursor

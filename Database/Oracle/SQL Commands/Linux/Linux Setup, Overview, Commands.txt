@@ -1,0 +1,661 @@
+
+##########################################################################################
+Enabling copy and Paste on Linux Mint/Ubuntu on Virtual Box
+##########################################################################################
+
+--Make sure you have an optical drive that is empty on Virtual Box for the VM
+
+STEP 1) go to "Devices" > "Insert Guest Additions CD image"
+
+STEP 2) Install the VBoxLinux addtions
+
+sudo ./cdrom/VBoxLinuxAdditions.run
+
+STEP 3) Restart the VM
+
+OR
+
+STEP 1) Start the VM and enter the commands into the command terminal
+
+sudo su
+cd /media
+mkdir cdrom
+mount /dev/cdrom /media/cdrom
+
+STEP 2) Install the VBoxLinux addtions
+
+sudo ./cdrom/VBoxLinuxAdditions.run
+
+STEP 3) Restart the VM
+
+############################################################################################
+Creating a Shared Folder
+###########################################################################################
+
+STEP 1) Go to VM settings in Virtual box and click on 'Shared Folders'
+
+STEP 2) Click the icon to add a shared folder. Enter the location and name of the shared
+       folder on the Host machine. Then enter the mount point for the location on the VM
+
+STEP 3) Create a folder of a similar name your home directory
+
+mkdir SharedFolder
+
+STEP 4) turn on the VM (if it is not already on) and add your user to the shared folder
+        group,'vboxsf'
+
+sudo adduser ufuoma vboxsf
+
+
+STEP 5) Reboot the VM (if needed)
+
+-------------------------------Screen Resolution Issues--------------------------------
+
+xrandr --output Virtual1 --mode 1360x768
+
+
+#########################################################################################
+CLI pro tips
+#########################################################################################
+
+-- Use up and down arrow keys to browse through previous commands
+-- tab completion to autocomplete a command or list options for a command
+-- use Ctrl-R to do a reverse search on your command hisory
+-- Ctrl-C to stop the exectution of a command
+-- Ctrl plus the lefte or right arrow keys to skip through each word in a command 
+   for ease of editing a command
+-- Everything is case sensitive in Linux
+-- It's best to avoid spaces and special characters in file names
+-- to view a listing of application updates use the command "sudo apt update"
+-- to apply the updates use "sudo apt upgrade"
+-- to install updates use "sudo apt install <application>"
+
+-- During Installation, choose dynamically allocated disk storage to partition
+   the disk during installation
+
+#################################################################################
+-----------------------Some useful Commands---------------------------------
+###################################################################################
+
+-- You can use the 'awk' command for string manipulation. You can use it to select
+   words from a text string. it can be used to branch, loop , read from files, print
+   out files, do arithmetic
+
+-- The following command passes the output of the 'last' command (prints list of
+   last logged in users) to the the 'awk' command (prints the first string in each
+   line of output) which in turn passess the output of its command to the 'sort' 
+   command which sorts each unqiue value  
+
+last | awk '{print $1}' | sort -u
+
+-- The following takes the contents of the varaible TMPFILE and passes it to the 
+   awk command. The awk command takes the input and outputs the first string 
+   delimited by ":" followed by a space, then the second string delimited by ":"
+   followed by a space, then the 3rd string delimited by a ":". This output is 
+   passed to the while loop which read
+
+cat ${TMPFILE} | awk -F: '{print $1 " " $2 " " $3}' | while read TBL DTF BUF
+do 
+  echo "${TBL} ${DTF} ${BUF}"
+done
+
+
+-- The tee command sends an output both to screen and to an output file. The 
+   following example uses the 'tail' command to get the last 10 lines in the alert
+   log of a database and sends the output to screen and to the log file specified in
+   the tee command
+
+tail -10 alert_${ORACLE_SID}.log | tee last_10_lines.log
+
+-- To allow a script to run even after you disconnect from the shell use nohup, 
+   which stands for no-hangup. The following example runs a script (testscript.sh)
+   and sends the standard output and standard error output to testscript.out
+
+nohup testscript.sh > testscript.out 2>&1 &
+
+-- The 'cut' command can be used to cut parts of a string. "-d" sets the 
+   delimiter. '-f1' means cut field 1 (hello). f2 would be "there"
+
+echo "hello-there" | cut -d '-' -f1
+
+-- The 'paste' command merges the lines from two different files into one line. 
+   The first lines in both files will be merged in the output as the first line of
+   output
+
+paste file1 file2 
+
+-- use 'uptime' utility to check how long the server has been up and running
+
+-- To get sever information enter the command
+
+uname -a
+
+-- Use 'wc' to do a word count. the '-l' option counts the number of lines
+
+cat alert_prod.log | wc -l 
+
+-- Use 'sed' command to do a search and replace on an output. the following example
+   removes the word "there" fromt the output of the echo command
+
+echo "Hello there World" | sed "s/there//" 
+
+-- Use can use the 'expr' function to evaluate expressions (i.e to update a count
+   in a loop)
+
+-----------------------------------List (ls) command------------------------------------
+
+-- From the home directory, use the following command to view a list of all the command
+   binary files. All commands are essientilly binary files
+
+ls /bin
+
+-- To view all directories and files including hiden files in the current directory
+
+ls -a
+
+-- use "ll" command to view list of files, file owner, and privileges
+   "ll" is the same as "ls -alF". 
+-- "ll" Command might not be avilable in all distributions
+
+ll
+
+-----------------------------Print working directory-------------------------------------
+
+-- gives you the full path name of the current directory
+
+pwd
+
+
+-------------------------------Change directory---------------------------------------
+
+-- Allows you to go to a specific directory if you specify the directory path after "cd"
+-- Use ".." to go one level down in the directory structure
+-- Use "~" to go to the "/home/username" directory
+
+cd path_name
+
+-- Go back (or up) by one directory
+
+cd ..
+
+-- Go back into a different directory in the parent folder of th current directory
+
+cd ../sibling_directory
+
+-- Go to user's home directory 
+
+cd ~
+
+###################################################################################
+---------------------------View information about a command----------------------
+###############################################################################
+
+-- To view the help page on a command use either of the following two commands. "-h"
+   might mean something else for certain commands (ex -h means "human readable" instead 
+   of "help" when used after "ls" command)
+
+-h
+
+Or 
+
+--help
+
+-- To provide a brief description of a command
+
+whatis command_name
+
+-- To view the manual for a command
+
+man command_name
+
+-- To find manual sections that contain the word "command"
+
+apropos command
+
+-- To view the help page on a command in the command binary file. The following
+   looks up the help page for the binary file "echo" command. The bash "echo"
+   command overrides the binary file command (and has some limited features)
+   as a result in linux mint
+
+/bin/echo --help
+
+################################################################################
+----------------------------File Management-----------------------------
+################################################################################
+
+-- Create a file
+
+touch 
+
+-- Remove a file
+
+rm -f /directory/file_name
+
+-- To remove all files within the "hot" directory
+
+rm -rf /backup01/hot/*
+
+-- To remove the directory "hot" including it's contents
+
+rm -rf /backup01/hot 
+
+-- To copy a file
+
+cp
+
+-- To move or rename a file
+
+mv
+
+-- To find files. You can use the "-type" switch to filter by type (d is for
+   directory, f is for files. use "-name" to specify the file or directory name
+    being searched for. Use "./" if it is part of the current directory 
+
+find ~/search_location -type d -name find_this_directory
+
+
+find . -type d -exec chmod 755 {} \;
+
+-- Starts the search in the current directory
+
+find . -name "*.txt" -print
+
+-- Starts the search in the home directory of the user
+
+find $HOME/ -name '*.par'  -print
+
+-- deletes the file "ray.txt' from every place it might exist on the linux file 
+   system. BE VERY CAREFULL with this command
+
+find / -name 'rays.txt' -exec rm -f {} ';'
+
+------------------------search for pattern string in a file--------------------
+
+-- Prints every line in the file that is not a blank space. '^' is the begining of
+   the line, '$' is the end of the line "-v" means not. So the command finds any 
+   lines that do not have the end of the line right next to the beginning of the 
+   line (in other words any line that is not blank)
+
+grep -v '^$' rays. txt
+
+
+##################################################################################
+------------------------Directory Management----------------------------
+#################################################################################
+
+-- Create a directory
+
+mkdir 
+
+-- Remove an empty directory
+
+rmdir
+
+-- Remove a non-empty directory (the "-r" switch/option means recursive)
+
+rm -r
+
+-- DON'T USE THIS! The "r" means recursive, the "f" means force and the
+   "/" means it should start at your root level. This will theoretically 
+    all the files in your system
+
+rm -rf /
+
+-- Find the full path of a command by using the "which" command
+
+which ksh
+
+------------------------------File Ownership-----------------------------
+
+-- To change owner
+
+chown owner:group filename
+
+-- To change group
+
+chgrp
+
+############################################################################
+Dealing with files
+############################################################################
+
+----------------------Do a string search with files-------------------------
+
+-- The * causes it to search for the keyword within all files in the directory
+
+grep "keyword" *
+
+---------------------------File Permissions------------------------------
+
+-- To view a list of permisions for all files use the command below. The
+   first entry in each row gives the permissions for the user-group-other 
+
+ls -lh
+
+-- ugo(a) = User / Group / Other / All
+-- rwx = Read / Write / Execute
+
+-- To modify permissions use "chmod". Use "+" sign to add persmission and 
+   the "-" sign to remove permissions
+-- The following command changes the group read and write permissions for 
+   the file in the given directory
+
+chmod g+rw <file/dirname>
+
+-- remove read permissions from "Other" for the given file 
+
+chmod o-r <file/dirname>
+
+-- give read and execute permissions to "all"
+
+chmod a+rx <dir/dirname>
+
+-- You can set permissions using numeric or binary representation
+
+numeric: r=4 binary:100
+numeric: w=2 binary:010
+numeric: x=1 binary:001
+numeric: rwx=7 binary:111 (4+2+1)
+numeric rw-=6 binary:110
+
+chmod 644 <filename> is equivalent to the following 3 commands 
+ chmod u+rw <filename>
+ chmod g+r <filename>
+ chmod o+r <filename>
+
+OR 
+
+chmod u+rw,g+r,o+r <filename>
+
+-- The number 6 sets the permissions for users, the 4 after the 6 sets 
+   permissions for the group, and the lst 4 sets permissions for other
+
+
+-- To give permission to list a file. 
+
+dir +x
+
+-- The following find command might be useful. it finds all the directories
+   in the current directory (".") then the "exec" switch allows you to execute a commond (chmod) 
+   on the results. after the "find" keyword you can specify the current 
+   directory ("."), the root directory ("/"), home directory ("/home/ufuoma" or "~" )
+   or a full path for any directory
+-- It inserts whatever it finds into curly brackets
+-- The 755 indicates the permissions on the directory using the numeric method 
+
+----------------Default File permissions for a user-----------------------------
+
+-- View the default file permissions for a user by using the umask command. the "-S"
+   option displays the mask as symbolic value (u=rwx, g=rx, o=rx)
+
+umask | umask -S
+
+-------------------------Change Ownership of files adn directories---------------
+
+-- The following command recursively changes ownership of all files with the 
+   /u01/app directory to user "oracle" and the "oinstall" group
+
+chown oracle:oinstall -R /u01/app
+
+
+find . -type d -exec chmod 755 {} \;
+
+-- To give permission to execute a file. The following find command might be useful
+
+file +x
+
+-- SImilar to the previous find command for for file types
+
+find . -type f -exec chmod 644 {} \;
+
+
+-- Set user id (setuid) and set group id (setgid) for special permissions
+-- For files set user/group of a process when an executable is run
+-- For directories, setuid does nothing. setgid sets the default group 
+   ownership of new files/directories created within the directory
+
+-- special permission on directories only, to protect files from being
+   deleted by anyone but the owner
+
+chmod +t <file/dirname>
+
+-------------------------Extended permissions------------------------
+
+-- Get file Acess Control List (ACL)
+
+getfacl
+
+-- Set file Access Control List
+
+setfacl
+
+########################################################################################
+Editing files
+########################################################################################
+
+-- nano is a simple file editor recommended for beginners. To edit a file using nano test 
+   editor, enter the following command
+
+nano filename
+
+--------------------------------Using VIM text editor----------------------------------
+
+-- vi/vim is a very powerful editor with a very long learning curve. Good 
+   for writing code in the CLI. Go to vimtutor for info.
+-- When you initially enter vim, you are in command mode, meaning any 
+   key you enter with your keyboard will be interpreted as a command
+-- To type characters into the file press the "i" key to enter insert
+   mode first
+-- Use escape key or Ctrl-c to exit insert mode then type ":q!" to exit
+   command mode without saving
+-- Use ":wq" Shift-zz to write the file and exit command mode. You can also use
+-- Use "/" to do a keyword search
+-- emacs is like vi
+-- You can type "unalias vi" to change the text color to all white
+
+-- Use the following command to edit a text using vim
+
+vim filename
+
+-- Global search and replace command below replaces all instances of the word "old" with
+   the word "new". %s is for substitution and g is for global
+
+:%s/old/new/g
+
+--------------------------------Handling Files-------------------------------
+
+-- Search for a pattern ("host") in a file ("domain.xml") or standard input
+
+grep host domain.xml
+
+-- The "l" causes it to return a file name instead of the entire line,
+   the "r" is so it recurses, and the "n" cause it to return a line number
+-- the "*" cause it to search through all the files. you can enter a file
+   name instead to only search within a file 
+
+grep -lrn <keyword> *
+
+-- Highlights the differences between two files
+
+diff file1 file2
+
+-- pseudo-files are located in /dev
+
+ls /dev/input/mouse0
+
+-- configuration files are located in /etc
+
+ls /etc
+
+------------------------Displaying the contents of a file----------------
+
+-- To display the contents of a file one page at a time
+
+more file.txt
+
+-- To display the content of the file with more navigational control. Use 
+   the up/down arrows to scroll or type line number and g to navigate through
+   the file. To go back to the beginning type g
+
+less table1
+
+-- To sort the file which has names in it in alphabetical order. the 
+   /home/etc directory contains the system configurations
+
+sort names.txt
+
+sudo du -hs /etc/* |sort -hr | more
+
+-- Dump the content of a file to the terminal
+
+cat filename
+
+-------------------------Creating and running a script file----------------------------
+
+--Create the file in a text editor and save it with a .sh extention
+
+-- Make the file executable
+
+chmod +x <filename>
+
+-- Execute the file with "./" prefix
+
+./<path>/<filename>
+
+OR 
+
+./<filename>
+
+
+############################################################################
+Redirection
+############################################################################
+
+-- Location of terminal error output. "dev" stands for devices. All
+   pseudo-files are located in the /dev directory
+
+ls /dev/stderr 
+
+-- Location of terminal input
+
+ls /dev/stdin
+
+-- Location of terminal output
+
+ls /dev/stdout
+
+mail me < my_letter.txt - input operator
+
+---------------------------Redirect Standard output--------------------------------------
+
+-- overwite the file test.txt with the output of the terminal command (stdout)
+   instead of displaying the output in the terminal.  
+
+echo "test" > test.txt
+
+-- You can use the numbers 1=stdout, 2=stderr, 3=input in front of the ">" to 
+   redirect the output, error output, or input of the terminal into a file. 
+   stdout is the default if no number is used in front of the ">" sign
+
+-- the "2>" part sends the error output from the second find command to the 
+   /dev/null file. This is a way to dicard error messages that you do not want
+   to be displayed in the terminal
+
+find /var/ -name "*.txt" > find 2>/dev/null
+
+-- Use the ampersand (&) symbol to reference a standard channel. The following
+   command sends the output of the echo command to channel 2, which is the 
+   standard error (stderr) channel which is currently set to the terminal
+
+echo "error" >&2
+
+-- To append an output to the file instead of overwriting it, use ">>"
+
+echo "123" >> test.txt - append operator
+
+-------------------------Redirect Standard input-------------------------------
+
+-- Use "<" to redirect input to someplace else. The example below passes the 
+  test.txt file as input to the "wc" command to count the lines ("-l") in the file
+
+wc -l < test.txt
+
+-- You can use "<<" to send input someplace else (i.e sqlplus). "EOF" is an 
+   arbitrary marker that signifies the end of the input stream 
+
+sqlplus /nolog << EOF > ${OUTPUT_FILE}
+
+------------------Passing command output to another command-----------
+
+-- The pipe symbol "|" allows you to take the standard output from the 
+   preceeding "ls" command to be the input for the following "more" command
+
+ls -lahr /usr/* | more
+
+-- The output of the "du" command is used as an argument in the sort command.
+   This entire command can help you find the memory hogs on the system.
+   The "h" switch makes the configuration files human readable. The "r" switch
+   reverses the order in the sort (largest to smallest). The ouput of the sort
+   command is then in turn used as an input for the "more" command
+
+sudo du -hs <directory>/* | sort -hr | more
+
+##########################################################################
+Hidden files & Some Environment settings
+##########################################################################
+
+-- bash.history is a file the contains a list of all the commands that you've
+   ran
+
+cat .bash_history
+
+-- Bashrc is a script that runs when you start bash. You can use it to 
+   configure your bash environment
+
+nano .bashrc
+
+-- Change the unix prompt by setting the PS1 variable
+
+PS1='`hostname`*\${ORACLE_SID}-\${PWD}>"
+
+---------------------------Modify shell environment----------------------------
+
+-- for bash shells you can modify the .bash_profile file (which references .bashrc)
+   to set up your bash shell environement 
+
+vi .bash_profile
+
+
+#########################################################################
+Create a user
+########################################################################
+
+-- "-m" creates the user home directory, "-U" (distinct from lower case u)
+   creates a user group with the created username and adds the user to it
+
+sudo useradd -m -U user2
+
+-- install tree to use the tree command to display a tree of the file system 
+
+----------------------------To change password----------------------------
+
+-- Use this to create a password for a new user or change the password for 
+   an existing user
+
+sudo passwd user2
+
+-----------------------------Switching Users-----------------------------
+
+-- To become the root user
+
+sudo su
+
+-- To become a different regular user, user2. You need to know user2 
+   password or you can prefix it with the "sudo" keyword and use your 
+   password
+
+su user2     (need user2 password)
+
+OR
+
+sudo su user2  (can use the current user password)

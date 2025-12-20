@@ -1,0 +1,197 @@
+###########################################################################################
+# GENERAL 
+###########################################################################################
+
+------------------------------------------ SPECIAL CHARACTER ESCAPE -----------------------------
+https://docs.oracle.com/en/database/oracle/oracle-database/19/ccref/special-characters-in-oracle-text-queries.html#GUID-F94D663C-6CE6-4FB0-AA4A-3AAEFF2E66D3
+
+-- Turn off prompting for variable with '&' and '&&'
+
+SET DEFINE OFF;
+
+-- Turn off confirmation of values entered for bind variable (i.e variables prefixed with & or &&) 
+
+SET VERIFY OFF
+
+-- turn off feeback for queries (i.e number of rows returned at bottom of screen)
+
+SET FEEDBACK OFF
+
+-- Alternative way to escape a special character
+
+SET ESCAPE ON;
+
+SELECT 'blah \& blah' AS DES FROM DUAL;
+
+'blah backslash ampersand blah'
+
+
+########################################################################################
+# DATES
+########################################################################################
+
+- The easiest way to compare a data column to a string literal is to convert the date column to a string
+
+-- This compares the 'created' column of date datatype to the string literal '27-AUG-2024' to find rows with that value in 'created' column
+SELECT * FROM all_objects WHERE TO_CHAR(created, 'DD-MON-YYYY') = '27-AUG-2024'
+
+########################################################################################
+Generating reports in SQL
+########################################################################################
+
+-- Use 'ttitle' to add a title to a report. You can left, centre or right justify 
+
+ttitle center 'Travel Experts'
+
+-- To add a header to a report that is left justified
+
+repheader left 'Customer ' cust_id_var
+
+-- You can use the 'col' or 'column' command to store the values from a query
+   into a variable. In the example below the value of cust_id from the query is
+   stored in the variable cust_id_var and can be used elsewhere in the sql script.
+   NOPRINT tells it not to print the result of the query. The query must return 
+   one row
+
+COL cust_id NEW_VALUE cust_id_var NOPRINT FOR 99999999
+
+SELECT cust_id FROM customers
+FROM itinerary
+WHERE itinerary_no = 102;
+
+##############################################################################################
+# FUNCTIONS
+##############################################################################################
+
+------------------------------------- ROW_NUMBER() --------------------------------------
+
+-- Create an Id column of integer values from 1 to n
+SELECT ROW_NUMBER() OVER (ORDER BY (SELECT 1 FROM DUAL)) rowId, table_name FROM user_tables
+
+-- OR
+
+SELECT ROW_NUMBER() OVER (ORDER BY table_name) AS rowId, table_name FROM Listdomain
+
+
+Some functions have a regular expression version of the function (ie. REPLACE function haas REGEXP_REPLACE)
+https://www.techonthenet.com/oracle/functions/regexp_replace.php
+
+----------------------------------------- CASE EXPRESSION -----------------------------
+
+-- The example below is for a simple case expression. The charater set of the comparison value in each WHEN statement is
+in varchar2 by default. if the searched value (mls.material) is not in the same character set (i.e it is NCHAR, NVARCHAR, etc) then it
+needs to be converted using the CAST function for the query to work. Searched-case expressions will implicitly perform the conversion
+
+Select
+CASE CAST(mls.material AS CHAR(10))
+    WHEN 'X42' THEN 289
+    WHEN 'X46' THEN 317
+    WHEN 'X52' THEN 359
+    WHEN 'X56' THEN 386
+    WHEN 'X60' THEN 413
+    WHEN 'X65' THEN 448
+    WHEN 'X70' THEN 482
+    WHEN 'X80' THEN 551
+    END as PipeGrade
+from P_MAINLINE_SEGMENTS mls
+join PIPELINELINE pl on pl.name = mls.pl_name
+where MLS.assetgroup in (3)
+
+-- Searched case expression
+
+Select
+CASE 
+    WHEN mls.material = 'X42' THEN 289
+    WHEN mls.material = 'X46' THEN 317
+    WHEN mls.material = 'X52' THEN 359
+    WHEN mls.material = 'X56' THEN 386
+    WHEN mls.material = 'X60' THEN 413
+    WHEN mls.material = 'X65' THEN 448
+    WHEN mls.material = 'X70' THEN 482
+    WHEN mls.material = 'X80' THEN 551
+    END as PipeGrade
+from P_MAINLINE_SEGMENTS mls
+join PIPELINELINE pl on pl.name = mls.pl_name
+where MLS.assetgroup in (3)
+
+----------------------------- SEARCH AND REPLACE STRING -----------------------------
+
+-- The function below is the same as function in SQL Server 
+REPLACE (Source, Old_string, new_string)
+
+- For regular expression search and replace use the function below
+search_string: You can use '|' as 'or' symbol to search for multiple different characters at once
+postion parameter : is the index of the source string where the search should begin
+occurrence: if you specify 0, Oracle replaces all occurrences of the match if you specify n > 0
+        Oracle replaces the nth occurrence
+match_parameter: 'i' (include single quotes) specifies case-insensitive match, 'c' specifies case-sensitive match
+
+https://www.techonthenet.com/oracle/functions/regexp_replace.php
+
+REGEXP_REPLACE(source_string, search_string, replace_string,position,occurrence,match_parameter)
+
+-- The example below replaces all periods, dashes, underscores, and spaces in 'DomainDescr' column with no-space
+NOTE**: You must use '\' to escape special characters such as '.', '&', etc
+
+REGEXP_REPLACE(DomainDescr, ' |-|_|\.', '')
+
+---------------------------------------- COMPARISON ------------------------------------------------
+
+-- comparison with regular expression --> https://www.oracletutorial.com/oracle-string-functions/oracle-regexp_like/
+
+REGEXP_LIKE(source_string, search_pattern [, match_parameter]);
+
+Example: Notice that '%' wildcard match is not used. But if needed you can use '.*' to match any number of characters except null
+
+SELECT df.tablespace_name, 
+       df.file_name
+FROM dba_data_files df
+WHERE NOT REGEXP_LIKE(tablespace_name, 'UNDO|SYSTEM|SYSAUX|USER')
+ORDER BY 3 DESC;
+
+--------------------------------------- FIND STRING -------------------------------------------
+
+https://docs.oracle.com/en/database/oracle/oracle-database/19/sqlrf/REGEXP_INSTR.html
+
+INSTR(source_string, search_string)
+REGEXP_INSTR(source_string, search_string)
+
+---------------------------------- TAKE A SUBSTRING FROM A STRING ----------------
+
+SUBSTR(source_string, start_position, number_of_characters_to_remove)
+
+------------------------------------------STRING AGGREGATION -----------------------------
+
+- Oracle equivalent of STRING_AGG in SQL Server
+
+SELECT LISTAGG(table_name, ',') FROM user_tables;
+
+#################################################################################################
+# SET SESSION PARAMETER
+###################################################################################################
+
+--------------------- Set session for case-insensitive comparisions and sorts --------------------
+
+ALTER SESSION SET nls_comp = Linguistic;
+ALTER SESSION SET nls_sort = binary_CI;
+
+------------------------------ SET PARAMETER JUST FOR A QUERY ---------------------------------
+-- Does not work in Oracle 12c
+
+SELECT COUNT(*) INTO CNT
+FROM user_tables 
+WHERE table_name = 'Temp_ColumnName' COLLATE BINARY_CI;
+
+#################################################################################################
+# GENERATING A REPORT
+#################################################################################################
+
+-- Compute a sum at bottom of a report
+
+BREAK ON REPORT
+COMPUTE SUM OF percentage_space_used ON REPORT
+COMPUTE SUM OF percentage_space_reclaimable ON REPORT
+
+SELECT * FROM v$recovery_area_usage;
+
+CLEAR BREAKS;

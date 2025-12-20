@@ -1,0 +1,291 @@
+---------------------- Lookup domain name in cmd prompt ------------------------------
+
+nslookup -set type=MX outlook.com
+
+-----------------------run windows commands in sqlplus---------------------
+
+- prefix the command with '$' sign
+
+$lsnrctl status
+
+- OR
+
+host lsnrctl status
+
+--------------Run windows cmd commands in SQL Server Studio Managment---------
+
+- Prefix the command with a '!!'. The following command lists only the filenames
+  for all files with the .txt extention in the following directory
+
+!! dir C:\user_name\documents\*.txt /b
+
+-------------------------Run linux commands in sqlplus------------------------
+
+-- prefix the commands with an exclamation mark "!" symbol
+
+! ls -l
+
+----------------------run sqlplus commands in RMAN-----------------------
+
+-- prefix the command with "SQL" or "sql". Certain commands will not work
+
+SQL SELECT name FROM v$database;
+
+#################################################################################
+Oracle SETTINGS
+##################################################################################
+
+-- Creating a table with NOLOGGING created minimal redo data and makes large insers go 
+   faster
+
+-- PERIOD FOR clause can allow you to create a valid-time interval for each row filter 
+  which can allow you to perform compex time based queries incluiding bi-temporal queries 
+  (SEE chapter 20 page 347-349 of Oracle Database 19C: Backup and Recovery)
+
+-- sets a timer to time query execution
+
+SET TIMING ON|OFF
+
+--  displays a time in the SQL prompt
+
+SET TIME ON
+
+-- You can use DBMS_FLASHBACK_ARCHIVE apply visibility control to queries and DML statements
+
+-- Sets number of rows in report before a page break
+
+SET PAGES|PAGESIZE 100
+
+-- Set width of reporting screen
+ 
+SET LIN|LINES|LINESIZE 120
+
+-- Set both the pagesize and linesize
+
+SET PAGES 9999 LINES 300
+
+-- Set default text editor foe afiedt.buf
+
+define _editor=/usr/bin/vim
+
+-----------------------Some useful sql commands---------------------------------
+
+-- type "ed" into SQL prompt to edit the last command. type the correction into the afiedt.buf
+   buffer. Save and close the file then type "/" into the SQL command prompt and press enter
+
+-- You can re-enter a previous command with a different value 
+
+c/old_value/new_value
+
+-- Repeate the last command with "/"
+
+---------------------------- Configuring different Oracle Homes ----------------------
+
+-- Session-Level configuration (settings revert back after exiting the command line)
+-- if there are multiple oracle homes within the same host, you will need to configue the
+  Oracle environment by setting it up to connect to the correct Oracle home and bin path. The
+  bin folder contains the oracle command/binary files for running SQL*Plus, RMAN, expdp, impdp, etc
+  
+1) SET ORACLE_SID =DBNAME
+
+2) SET ORACLE_HOME=C:\App\Oracle\product\12.2.0\dbhome_1\  (OPTIIONAL: you can set ORACLE_BASE)
+
+3) SET PATH=%ORACLE_HOME%/bin;%PATH%
+
+You can set you default ORACLE_SID by creating an ORACLE_SID variable in system properties in windows
+	- search 'edit environment variables'
+	- click on 'New'
+	- set varible name to 'ORACLE_SID'
+	- set variable value to database name
+
+------------------ System-Level configuration (persistent settings)
+
+1) Go to 'System Properties' by typing 'edit environment variables' into the windows search bar
+2) Click on 'Environment Variables' 
+3) In the pop-up window under the section labeled 'System Variables' select the 'Path' variable and click on 'Edit'
+3) In the 2nd pop-up window, move you preferred Oracle home bin path to the top of the list
+4) Click 'Ok' twice on the 2 pop-up windows to save the settings
+
+
+ALTERNATIVE METHOD
+
+-- To set a persistent system variable
+
+SETX variableName value /m  
+
+-- to set a persistent user environment variable (overrides system variable)
+
+SETX variableName value /m  
+
+##################################################################################
+Location of Files
+##################################################################################
+
+-- Query Location of Oracle Home 
+
+SELECT SYS_CONTEXT('USERENV', 'ORACLE_HOME') FROM DUAL;
+
+OR
+
+-- The following can only be run with the SYS user (unless you grant access through a public synonym)
+VAR oracle_home CLOB;
+EXEC DBMS_SYSTEM.GET_ENV('ORACLE_HOME', :oracle_home);
+
+PRINT oracle_home
+
+OR
+
+Go to 'edit environement variables' app on Windows --> click on 'Environment Variables' --> find variable labeled as 'Oracle_home'
+
+-- Location of alert log file
+
+/u01/app/oracle/diag/rdbms/<SID>/<SID>/trace/
+
+###################################################################################
+#							Data dictionary views
+###################################################################################
+
+-- For multi-tenant (CDB) databases
+
+all DBA_ views have a CDB_ equivalent
+all V$_ views have a GV$_ equivalent 
+
+-- To see the current mode of the database
+
+SELECT open_mode FROM v$database;
+
+-- info about alert log and other diagnositic files 
+
+SET LINESIZE100
+COLUMN NAME FORMAT A15
+COLUMN VALUE FORMAT A70
+
+SELECT Name, Value FROM v$diag_info;
+
+--------------------data dictionary view to look up nls parameters------------------
+
+show parameter nls_database_parameters
+
+------------------------To find Alert log----------------------------
+
+query the v$diag_info dynamic performance view
+
+-------------installed components on database-------------------------------
+
+- data dictionary view to see installed components on database (Oracle Multimedia, APEX, etc)
+
+desc dba_registry
+
+----------------------view to see background processes-------------------------
+
+desc v$bgprocess
+
+-------------------------register database service info with a listener--------------------
+
+ALTER SYSTEM REGISTER;
+
+--------------------Connect to Oracle SQL from windows command prompt-----------------
+
+-- Using OS authentication
+
+SET ORACLE_SID= database_SID
+
+SQLPLUS / AS SYSDBA
+
+-- Using Oracle Net authentication
+
+sqlplus sys@cdb2/oracle as sysdba
+
+############################################################################################
+USEFUL WINDOWS COMMANDS
+###########################################################################################
+
+---------------------------------- See who is connected to a server ----------
+
+query user
+
+--------------------------- Location of host file. Used to resolve IP addresses
+
+c:\Windows\System32\Drivers\etc\
+
+----------------------------------------- COMMANDS ------------------------------------------
+
+-- using command prompt
+
+-- Check system info including System Boot Time (last computer restart time)
+
+>systeminfo
+
+
+-- displays your username
+
+ECHO %username%
+
+-- displays hostname and username
+
+WHOAMI
+
+-- displays all users created on the node
+
+NET USERS
+
+-- display detailed info about a particular user (enter the username in quotes)
+
+NET USER "user_name"
+
+-- Lists all the users assigned to the given group_name. group_name could be: 
+   Administrators, ORA_DBA, ORA_OPER, etc
+
+
+NET LOCALGROUP {group_name}
+
+OR
+
+NET GROUP "DRAS ADMINS" /DOMAIN
+
+-- Get account info
+
+NET ACCOUNT 
+
+-- detailed info on all accounts on the node
+
+WMIC USERACCOUNT LIST FULL
+
+
+
+-------------------------------------Deleting files and directories--------------------
+
+-- to delete a windows service
+
+sc delete "service_name"
+
+-- delete a file
+
+del filename (use /q to delete without a prompt)
+
+-- delete an empty directory
+
+rmdir directory_name
+
+-- delete a non-empty directory and all it's files
+
+rmdir /s directory_name
+
+-----------------------------View Network Information--------------------------------
+
+ipconfig
+
+--------------------------------View Disk Drive info--------------------------------
+
+-- Search "computer management" then click on "disk management" or search for "partition"
+   and click on "Create and format hard disk"
+   
+------------------------------- Get Windows License Key ----------------------------
+
+PS C:\Users\Ufuoma_Ikporo> powershell "(Get-WmiObject -query 'select * from SoftwareLicensingService').OA3xOriginalProductKey"
+NDDJ6-39CYM-FG398-HWC6B-TXXTP
+
+PS C:\Users\Ufuoma_Ikporo> Write-Host "Press any key to continue..."
+Press any key to continue...
+
+PS C:\Users\Ufuoma_Ikporo> $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")

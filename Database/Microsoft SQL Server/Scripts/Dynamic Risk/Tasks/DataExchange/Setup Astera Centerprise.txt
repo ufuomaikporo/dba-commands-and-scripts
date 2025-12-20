@@ -1,0 +1,17 @@
+Centerprise/Astera setup
+
+1. Install the following from ---> X:\Operations\DevOps\Astera softwares
+  and make sure the versions match (Centerprise Data Integrator 8 pairs with  Astera Integration Server 8)
+
+i) Centerprise Data Integrator 8 (To View and edit templates) 
+ii) Astera Integration Server 8 (Interfaces with the DataExchange app)
+
+
+2. Add the DataExchangeUser as logon user to the Astera Integrated Server service and make sure the logon user 
+	for the DataExchange Service is be the Local System user
+3. Make sure there is a local SQL server database on the host if you want to be able to connect to Centerprise
+4. Make sure the DataExchange service is running -- > launch the DataExchange app without logging/connecting to a database. Then
+  turn on the "Astera Integrated Server #" service 
+5. Set the Port number to 9260 and the servername to HTTPS:\\lOCALHOST
+6. Login with the credentials ---> User: Admin Pass: Admin123
+ 

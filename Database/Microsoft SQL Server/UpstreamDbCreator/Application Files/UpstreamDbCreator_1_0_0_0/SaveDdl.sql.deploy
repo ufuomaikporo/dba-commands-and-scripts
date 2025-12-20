@@ -1,0 +1,100 @@
+DECLARE @sql nvarchar(max)
+DECLARE @tableName varchar(100)
+
+IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.Tables WHERE Table_Name = 'ColumnScripts')
+BEGIN
+	TRUNCATE TABLE ColumnScripts
+END
+ELSE 
+BEGIN
+	SET @sql = 'Create Table ColumnScripts (Script nvarchar(max))'
+	EXEC sp_executesql @sql
+END
+
+IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.Tables WHERE Table_Name = 'TriggerScripts')
+BEGIN
+	TRUNCATE TABLE TriggerScripts
+END
+ELSE 
+BEGIN
+	SET @sql = 'Create Table TriggerScripts (Script nvarchar(max))'
+	EXEC sp_executesql @sql
+END
+
+IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.Tables WHERE Table_Name = 'FkScripts')
+BEGIN
+	TRUNCATE TABLE FkScripts
+END
+ELSE 
+BEGIN
+	SET @sql = 'Create Table FkScripts (Script nvarchar(max))'
+	EXEC sp_executesql @sql
+END
+
+DECLARE t_cursor CURSOR FOR 
+	SELECT table_name FROM INFORMATION_SCHEMA.Tables WHERE table_name IN ('ANODE','ATMOSPHERICINSPECTION','BIOPROBE','BOND','CLEANINGTOOL','CLEANINGTOOLRECEIVERLOC','COUPON','EQUIPMENT',
+	'GROUNDBED','HIGHIMPACTLOCATION','INCIDENT','INLINEINSPECTIONEVENT','NODECONNECTION','NODECONNECTIONFLOWDIRECTION','PIPELINECHEMICALBATCH','PIPELINECHEMICALINJECTION','PRESSURETEST',
+	'PROBE','RECTIFIERENCLOSURE','REPAIR','RISER', 'STATIONSERIES','TANK','TESTPOINT','VALVE','WATERCROSSING','WELL','WELLCHEMICALBATCH','WELLCHEMICALINJECTION')
+
+OPEN t_cursor
+
+	FETCH NEXT FROM t_cursor INTO @tableName
+
+	WHILE @@FETCH_STATUS = 0
+	BEGIN
+		SET @sql = 'INSERT INTO ColumnScripts EXEC sp_GetColumnsDDL ' + @tableName
+		EXEC sp_executesql @sql
+
+		SET @sql = 'INSERT INTO FkScripts EXEC sp_GetFKDDL ' + @tableName
+		EXEC sp_executesql @sql
+
+		FETCH NEXT FROM t_cursor INTO @tableName
+	END
+
+CLOSE t_cursor
+DEALLOCATE t_cursor
+
+INSERT INTO FkScripts
+SELECT 'ALTER TABLE ' + tmp.TableName + '  WITH CHECK ADD  CONSTRAINT [' + tmp.FK_NAME + '] FOREIGN KEY([' + tmp.ColumnName + '])
+REFERENCES [dbo].[' + tmp.ReferencedTable + '] ([' + tmp.ReferencedColumn + '])' 
+FROM (
+SELECT obj.name AS FK_NAME,tab1.name AS TableName, col1.name AS ColumnName,tab2.name AS ReferencedTable,col2.name AS ReferencedColumn
+FROM sys.foreign_key_columns fkc
+INNER JOIN sys.objects obj ON obj.object_id = fkc.constraint_object_id
+INNER JOIN sys.tables tab1 ON tab1.object_id = fkc.parent_object_id
+INNER JOIN sys.schemas sch ON tab1.schema_id = sch.schema_id
+INNER JOIN sys.columns col1 ON col1.column_id = parent_column_id AND col1.object_id = tab1.object_id
+INNER JOIN sys.tables tab2 ON tab2.object_id = fkc.referenced_object_id
+INNER JOIN sys.columns col2 ON col2.column_id = referenced_column_id AND col2.object_id = tab2.object_id
+) tmp
+WHERE tmp.ReferencedTable IN (
+'ANODE',
+'ATMOSPHERICINSPECTION',
+'BIOPROBE',
+'BOND',
+'CLEANINGTOOL',
+'CLEANINGTOOLRECEIVERLOC',
+'COUPON',
+'EQUIPMENT',
+'GROUNDBED',
+'HIGHIMPACTLOCATION',
+'INCIDENT',
+'INLINEINSPECTIONEVENT',
+'NODECONNECTION',
+'NODECONNECTIONFLOWDIRECTION',
+'PIPELINECHEMICALBATCH',
+'PIPELINECHEMICALINJECTION',
+'PRESSURETEST',
+'PROBE',
+'RECTIFIERENCLOSURE',
+'REPAIR',
+'RISER',
+'STATIONSERIES',
+'TANK',
+'TESTPOINT',
+'VALVE',
+'WATERCROSSING',
+'WELL',
+'WELLCHEMICALBATCH',
+'WELLCHEMICALINJECTION')
+

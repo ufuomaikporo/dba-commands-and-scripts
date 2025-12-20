@@ -1,0 +1,682 @@
+#####################################################################################
+ SPFILE, CONTROLFILE AND ARCHIVELOG RESTORE 
+#####################################################################################
+
+----------------------------------------- RESTORE SPFILE -------------------------
+
+-- Restore spfile from a controlfile autobackup in a non-default location
+RUN 
+{
+  SET CONTROLFILE AUTOBACKUP FORMAT 
+    FOR DEVICE TYPE DISK TO 'autobackup_format';
+  RESTORE SPFILE FROM AUTOBACKUP;
+}
+
+------------------------------------ RESTORE CONTROL FILE ----------------------------
+
+-- restore a controlfile or spfile from an autobackup by using the new recovery area clause
+
+RESTORE CONTROLFILE FROM AUTOBACKUP USING
+RECOVERY AREA 'c:\recovery';
+
+RESTORE CONTROLFILE FROM "C:\backup\rman\ctl_c-12345-20141003-03";
+
+RUN {
+SET UNTIL TIME "TO_DATE('2025-05-19 12:30:00','YYYY-MM-DD:HH24:MI:SS')";
+RESTORE CONTROLFILE TO 'C:\Apps\Oracle\RestoreTest\ORA19C22\control01.ctl' FROM AUTOBACKUP;
+}
+
+------------------------------ RESTORE ARCHIVED REDO LOGS --------------------------
+-- Use the set command to change the location where you would like to restore the archived redo logs.
+-- it restores it to the archive log destination by default
+
+SET ARCHIVELOG DESTINATION TO '/home/arc_logs_new/';
+
+RESTORE ARCHIVELOG ALL;
+
+-- Restore only a particular set of archived redo logs
+
+RESTORE ARCHIVELOG FROM [SEQUENCE 153 UNTIL SEQUENCE 175 | SCN 56789];
+
+#####################################################################################
+# MOCK RESTORE & CHECK BACKUP FILES
+#####################################################################################
+
+---------------------------Preview and validate backups---------------------------------
+
+-- Display a report on backups and archived redo logs that will be used to restore and 
+  recover the database. Output similar to output of LIST BACKUP command
+   
+RESTORE [DATABASE | TABLESPACE tablespace_name | DATAFILE #filenum] PREVIEW;
+
+-- Check that the backup is not corrupted, and all the files required to perform the backup restore is actually present in the backup directory
+
+RESTORE [DATABASE | TABLESPACE tablespace_name | DATAFILE #filenum] VALIDATE;
+
+-- performs same operation as the RESTORE PREVIEW command but also validates the backup
+  file headers to determine if the files on disk or in media management catalog match what 
+  is in the metadata in the RMAN repository 
+
+RECOVER [DATABASE | TABLESPACE tablespace_name | DATAFILE #filenum] VALIDATE HEADER;
+
+######################################################################################
+# BASIC RESTORE AND RECOVERY
+######################################################################################
+
+----------------------------Create and view Restore Points---------------------------
+
+-- View restore points that were created
+
+V$RESTORE_POINT
+
+-- Creates a restore point called before_mods as of the time command is issued
+
+CREATE RESTORE POINT before_mods
+
+-- Creates a restore point called end_q1 at the SCN of 100
+
+CREATE RESTORE POINT end_q1 AS OF SCN 100;
+
+---------------------------- BASIC RESTORE-------------------------------------------
+
+-- view the datafile numbers in sql for datafile restores
+
+SET PAGESIZE 100
+COL name FORMAT a60
+
+SELECT file#, name FROM v$datafile;
+
+-- the RESTORE command recreates the datafile if it is missing
+
+RESTORE [DATABASE | TABLESPACE tablespace_name | DATAFILE #filenum];
+
+----------------------------- RESTORE WITH TAGS ---------------------------
+
+-- restores the database to the backupset with tag below then performs a complete recovery
+RESTORE DATABASE 
+  FROM TAG "consistent_whole_backup";
+RECOVER DATABASE 
+
+------------------------------ COMPLETE RECOVERY COMMAND -------------------------------
+
+-- The RECOVER command applies incremental backups, archived redo, and or online redo logs to roll-forward to the specified recovery point
+
+-- Recovers the datafiles with the file numbers of 20, 22 (using RMAN)
+
+RECOVER [DATABASE | TABLESPACE tablespace_name | DATAFILE 20, 22];
+
+----------------------------------- RECOVERY USING BACKUP FILES OUTSIDE OF FRA -------------------------
+
+-- You can use the CATALOG START WITH command to register non-FRA directories that contain backup files, archived log backups 
+  or controlfile and spfile backups. 
+
+NOTE**: if you do not end the directory path name with a backslash (i.e 'B:\DeleteMe') all files including files including subdirectory files
+		will be included. If you name the path with a backslash (i.e 'B:\DeleteMe\') subdirectory files will be excluded
+
+RUN
+{CATALOG START WITH 'B:\DeleteMe' NOPROMPT;
+RESTORE TABLESPACE DBBACKUPUSER;
+RECOVER TABLESPACE DBBACKUPUSER;
+}
+
+#########################################################################################
+# RESTORE NON-ARCHIVELOG MODE DATABASE
+#########################################################################################
+
+STEP 1) put the database in mount mode
+
+	STARTUP FORCE MOUNT
+
+STEP 2) Restore and recover the database.
+
+	RESTORE DATABASE 
+	  FROM TAG "consistent_whole_backup";
+	RECOVER DATABASE NOREDO;
+
+STEP 3) Open the database with the RESETLOGS option.
+
+
+ALTER DATABASE OPEN RESETLOGS;
+
+#########################################################################################
+DATABASE POINT-IN-TIME-RECOVERY (DBPITR)
+#########################################################################################
+
+-------------------------------View database incarnations----------------------------
+
+-- In RMAN
+
+LIST INCARNATION OF DATABASE ORANT12C;
+
+-- if connected to target database in RMAN
+
+LIST INCARNATION OF DATABASE;
+
+-- In sqlplus
+
+SELECT incarnation#, resetlogs_change#, status, resetlogs_id, resetlogs_time
+FROM v$database_incarnation;
+-----------------------------Performing DBPITR-----------------------------------
+
+NOTES**: RMAN performs complete recovery by default. Use 'SET UNTIL' before both the RESTORE and RECOVERY commands for point-in-time recovery 
+
+Database must be in archivelog mode
+
+1) Determine the restore target (data and time, SCN, restore point, or log sequence number)
+
+2) Set the NLS OS environment
+
+$export NLS_LANG = american_america.us7ascii
+$export NLS_DATE_FORMAT = "yyyy-mm-dd:hh24:mi:ss"
+
+3) Mount the database or shut it down and start it in mount mode
+
+4) Create a run block that includes the restore target, RESTORE AND RECOVER commands
+
+RUN
+{ 
+   SET UNTIL SCN 31149414;    
+  # Alternatives:
+  # SET UNTIL TIME 'Nov 15 2004 09:00:00';
+  # SET UNTIL TIME "TO_DATE('19-APR-2019 06:30:00','DD-MON-YYYY:HH24:MI:SS')";
+  # SET UNTIL TIMESTAMP (SYSDATE - 1);
+  # SET UNTIL SEQUENCE 9923; 
+  # SET UNTIL SEQUENCE 9923 THREAD 2; 
+  RESTORE DATABASE;
+  RECOVER DATABASE;
+  ALTER DATABASE OPEN RESETLOGS;
+}
+
+-- if you do not want to rely on NLS parameter you can set the time explicitly with the
+   TO_DATE function
+
+SET UNTIL TIME "TO_DATE('14.08.2018 21:59:00', 'dd.mm.yyyy hh24:mi:ss')";
+
+5) Open the database in READ ONLY mode. DO NOT open it in read/write mode, which is the 
+   default unless READ ONLY is specified, otherwise the restore will be committed
+
+ALTER DATABASE OPEN READ ONLY;
+
+6) If satisfied with the recovery then open the database with the RESETLOGS option. The
+  RESETLOGS option is only used when a DBPITR is performed
+
+ALTER DATABASE OPEN RESETLOGS
+
+#########################################################################################
+# RESTORE DATABASE ON A DIFFERENT SERVER
+#########################################################################################
+
+https://gruffdba.com/2017/03/18/restore-an-rman-backup-to-a-different-host/
+
+#########################################################################################
+PITR FOR PDBS
+#########################################################################################
+
+------------------------------Query incarnation-------------------------------------
+
+-- PDB incarnation view
+
+V$PDB_INCARNATION
+
+--------------------------------Perform DBPITR for PDB-------------------------------
+
+ALTER PLUGGABLE DATABASE pdb1 CLOSE;
+RUN {
+SET UNTIL SCN = 1851648;
+RESTORE PLUGGABLE DATABASE pdb1;
+RECOVER PLUGGABLE DATABASE pdb1
+ AUXILIARY DESTINATION = c:\app\oracle\oradata'
+ALTER PLUGGABLE DATABASE pdb1 OPEN RESETLOGS;
+}
+
+----------------------Perform TSPITR for PDB---------------------------------
+
+RECOVER TABLESPACE pdb1:test_tbs
+	UNTIL SCN 832972
+	AUXILIARY DESTINATION 'C:\tmp|cdb1\reco'
+ALTER TABLESAPCE pdb1:test_tbs ONLINE;
+
+#########################################################################################
+TABLESPACE POINT-IN-TIME-RECOVERY (TSPITR)
+#########################################################################################
+
+https://docs.oracle.com/cd/E11882_01/backup.112/e10642/rcmtspit.htm#BRADV89793
+https://docs.oracle.com/en/database/oracle/oracle-database/19/bradv/performing-rman-tspitr.html#GUID-4ADE81D7-CB75-4C39-AD08-589637C5E750
+
+------------------------- Prerequisites for TSPITR with an AUXILIARY INSTANCE -------------------------------------------
+
+-- to recover data after erroneous TRUNCATE TABLE statement
+-- to recover from logical corruption of table
+-- to undo the effects of a batch job or DML statements affecting only a part of the database
+-- to recover a logical schema to a different point in time from the rest of database
+-- to recover a dropped tablespace
+-- can be performed repeatedly to point-in-time before the tablespace was brought online
+   without requiring a recovery catalog
+-- For non-critical tablespaces (users tablspaces) the tablespace can be taken offline
+   so that the database can remain open while recovery is being performed
+-- Can't be used to restore critical tablspaces such as the SYSTEM, SYSAUX, and UNDO
+-- Can't be used on the default permanent tablespace. Create another tablespace
+   and make that your default permanent tablespace temporarily before restoring the default tablespace 
+-- Can't be used if there is a guaranteed restore point (Must drop guaranteed restore
+  points)
+-- Must have RMAN backups for SYSTEM, SYSAUX and UNDO tablspaces to perform the RECOVERY otherwise you will have
+	to manually issue the RECOVER TABLESPACE command after the restore completes and an error message is displayed
+
+
+-- if one of the tablspaces in the recovery set is the default tablespace, temporarily switch the default tablespace to 
+  a tablespace that is not part of the recovery set
+  
+ALTER DATABASE DEFAULT TABLESPACE tbs_perm_01
+
+--  a simpler alternative to TSPITR is Flashback Database (if the data is still available in undo tablespace)
+
+STEP 0) Make sure there are no active uncommited transactions on the tablespace or the recovery will fail. Either force users to
+rollback or commit the transactions or close the user session which will cause an automatic rollback 
+
+	SELECT s.sid,
+		   s.serial#,
+		   s.osuser,
+		   s.username AS DBUser,
+		   s.status,
+		   s.machine,
+		   s.program,
+		   t.status AS Transaction_Status
+	FROM v$session s
+	JOIN v$transaction t
+	ON s.saddr = t.ses_addr;
+
+STEP 1) Determine the target time using one or more of the following: Flashback Query, 
+   Flashback Transaction Query, Flashback Version Query. It is very important that you 
+  choose the correct target time if you are not using a recovery catalog (no second tries when using a control file as RMAN repository)
+
+
+STEP 2) Determine the tablespaces for the recovery set by checking to see if objects in the
+  tablespaces that are being recoverd have relationships with objects in other tablespaces.
+ Use the following procedure to find all tablespaces with dependencies on tablespaces in the recovery set and either
+ 
+	  i) Add the tablespace including the related objects to your recovery set
+	 ii) Remove the relationship
+	iii) Suspend the relationship for the duration of TSPITR
+	
+	Note**: Only users with the 'execute_catalog_role' role can execute this procedure. This role is initially only assigned to user SYS.
+
+	BEGIN
+	   DBMS_TTS.TRANSPORT_SET_CHECK('USERS,TOOLS', TRUE,TRUE);
+	END;
+	/
+	SELECT * FROM  TRANSPORT_SET_VIOLATIONS;
+	
+	------------ OR
+	
+	EXECUTE DBMS_TTS.TRANSPORT_SET_CHECK('DBBACKUPUSER', TRUE,TRUE);
+	SELECT * FROM  TRANSPORT_SET_VIOLATIONS;
+
+	-- If any rows are returned you can either add the tablespaces that contain the related objects to the recovery set,
+	  suspend the relationship for the duration of the TSPITR, or remove the relationship
+
+STEP 3) Identify objects that will be lost. Objects created after the target recovery time will
+  be lost. query the TS_PITR_OBJECTS_TO_BE_DROPPED view (Can only be viewed by SYS by default). Export the objects before 
+  performing the TSPITR and then import them back after the TSPITR
+  
+  --Replace RECOVERY_POINT_TIME in the query with the actual recovery point time in the format --> 'YYYY-MM-DD HH24:MI:SS'
+
+	SET LIN 200
+	COL owner FORMAT A25
+	COL name FORMAT A30
+
+	SELECT owner, name, tablespace_name, 
+		   TO_CHAR(CREATION_TIME, 'YYYY-MM-DD HH24:MI:SS') 
+    FROM ts_pitr_objects_to_be_dropped 
+	WHERE TABLESPACE_NAME IN ('DBBACKUPUSER') 
+	AND CREATION_TIME > TO_DATE('RECOVERY_POINT_TIME','YYYY-MM-DD HH24:MI:SS')
+	ORDER BY tablespace_name, creation_time;
+	
+	----------------- OR use a restore SCN (replace RESTORE_SCN with the actual SCN number for the restore)
+	
+	SELECT owner, name, tablespace_name,
+       TO_CHAR(creation_time,'YYYY-MM-DD HH24:MI:SS')
+    FROM ts_pitr_objects_to_be_dropped
+	WHERE tablespace_name IN ('USERS','TOOLS')
+	AND creation_time > TO_DATE(TO_CHAR(SCN_TO_TIMESTAMP(RESTORE_SCN),
+	'MM/DD/YYYY HH24:MI:SS'),
+	'MM/DD/YYYY HH24:MI:SS')
+	ORDER BY tablespace_name, creation_time;
+
+	-- If any rows are returned, use Oracle datapump to export the objects before performing recovery
+
+
+There are 3 very simalar options for TSPITR restore with an auxiliary instance
+
+
+------------------------------1) Fully automated TSPITR (Simplest option) ----------------------------------
+
+-- After fulfulling the prerequisites above 
+
+STEP 0) make sure there are no uncommited transactions on the tablespace
+
+STEP 1) Start an RMAN session as SYS with SYSDBA privileges (necessary to create auxiliary instance)
+		and connect to the target database and recovery catalog.
+STEP 2) Configure any channels required for TSPITR on the target instance.
+STEP 3) Execute the RECOVER TABLESPACE command and specify the auxiliary destination/directory using the AUXILIARY DESTINATION 
+       parameter (no spaces allowed in directory name). 
+	   
+-= MAKE SURE that the auxilary destination folder specified already exists (DON'T INCLUDE '\' at end of path name). 
+-- The files created in the auxiliary location will be cleaned-up automatically upon completion
+
+-- assuming your are already connected to the RMAN utility
+-- NLS_DATA_FORMAT set to 'yyyy-mm-dd:hh24:mi:ss' and NLS_LANG set to 
+   AMERICAN_AMERICA.WE8MSWIN125
+-- NO restore command is needed
+-- You could perform a complete tablespace recovery by using the current database SCN number found with --> SELECT current_scn FROM v$database;
+
+RUN 
+{
+	RECOVER TABLESPACE users, example
+	UNTIL [TIME "TO_DATE('2018-06-29 08:00:00', 'YYYY-MM-DD HH24:MI:SS')" | SCN 109009 | LOGSEQ 1300 THREAD 1 | TIMESTAMP (SYSDATE - 1)]
+	AUXILIARY DESTINATION 'E:\app\oracle\oradata\auxiliary';
+}
+
+STEP 4) Backup the recovered tablespaces before bringing them online (This is not absolutely necessary but is recommended)
+
+-- IMPROVE TSPITR performance by using CONFIGURE AUXNAME to set a persistent location
+  for auxiliary set data file image copy or use SET NEWNAME (within a RUN block)
+  to do the same for the duration of the block. using SET NEWNAME requires that you name
+  all the required files
+  
+RUN
+{BACKUP TABLESPACE users, example TAG 'FULL_BACKUP_AFTER_RESTORE';
+sql 'ALTER TABLESPACE users ONLINE';
+sql 'ALTER TABLESPACE example ONLINE';
+}
+
+----------------------2) Customized TSPITR with an automatic auxiliary instance-------------
+----------------------3) TSPITR with your own auxiliary instance--------------------------
+
+###########################################################################################
+TABLE POINT-IN-TIME-RECOVERY (TPITR)
+###########################################################################################
+
+https://oracle-base.com/articles/12c/rman-table-point-in-time-recovery-12cr1#google_vignette
+
+-----------------------------------Situations for TPITR-----------------------------------
+
+-- small number of tables need to be restored (TSPITR less effective here)
+-- not in a self-contained tablespace (TSPITR only works on self-contained tablespaces)
+-- purged tables (can't Flashback drop)
+-- after a structural DDL change such as TRUNCATE TABLE (can't Flashback Table)
+
+---------------------------Prerequisites and Limitations-----------------------------
+
+-- Target database must be in read/write mode 
+-- Target database must be in ARCHIVELOG mode
+-- no tables from the SYS schema, the SYSTEM and SYSAUX tablespaces, and standby databases
+   can be recovered using this method
+- You must log in to RMAN as a user with SYSDBA or SYSBACKUP privilege to create the auxilary instance
+
+-------------------------------Clauses-----------------------------------
+-- Use RECOVER TABLE command
+
+-- specify the destination for the auxiliary instance with the AUXILIARY DESTINATION
+or SET NEWNAME clauses. AUXILIARY DESTINATION clause is preffered because if a file
+is issed with the SET NEWNAME clause the recovery will fail
+
+-- Specify the name of the dumpfile with the DUMP FILE clause and the destination of the 
+  dumpfile with DATAPUMP DESTINATION
+
+-- RMAN imports the recoverd objects automatically into the target database unless you
+   specify NOTABLEIMPORT 
+
+-- use the RMAP TABLE and REMAP TABLESPACE clauses to rename recovered tables or table
+   partitions. If you remap a table the dependent objects (i.e. indexes and constraints) are
+   not imported and must be recreated
+
+STEP 1: Connect to RMAN as SYSDBA or SYSBACKUP
+
+STEP 2: Use the following command. The double quoted string for the SchemaName and TableName are case-sensitive. 
+	Make sure the folder path for the auxiliary instance exists
+
+RUN
+{
+RECOVER TABLE "SchemaName"."TableName"
+  UNTIL TIME "TO_DATE('04-29-2024 12:30', 'MM-DD-YYYY HH24:MI')" 
+  AUXILIARY DESTINATION 'B:\Backups\Auxiliary_Instance_Dest';
+ }
+  
+########################################################################################
+BLOCK MEDIA RECOVERY
+########################################################################################
+
+-----------------------------Block Corruption symptoms------------------------------
+-- ORA-01578 is generated when a corrupted data block is found and returns the returns the 
+   tablespace relative file number and block number
+
+-- if it always returns the same arguments (data file#, block #) then it is likely a
+  media corrupt block (bad block in a data file)
+
+-- if the argument changes each time, there may be a hardware problem and you should have
+   the memory and page space checked and also check the I/O subsystem for bad controllers
+
+----------------------------How to handle corruption---------------------------
+
+-- check the alert log and operating system log file
+-- use available diagnostic tools to determine the type of corruption
+-- determine whether the error persists by running checks multiple times
+    
+  ANALYZE TABLE emp VALIDATE STRUCTURE CASCADE ONLINE;
+
+-- recover data from the corrupted object if necessary
+-- resolve any hardware issues (memory board, disk controller, disks)
+-- recover or restore data from the corrupt object if necessary
+
+--------------------------Report Block corruption----------------------------------------
+
+-- periodic proactive health checks should be performed during non-peak periods. complete
+   check should also be preformed after a reactive check detects failure
+
+-- corruption can be detected thorugh the following means
+
+1) results of LIST FAILURE, VALIDATE, or BACKUP......VALIDATE command
+
+-- use VALIDATE DATABASE command to perform a manual health check on the database and 
+   it's components
+
+-- by default VALIDATE command only checks for physical corruption, but you can specify 
+   CHECK LOGICAL to check for logical corruption as well 
+
+-- problems initaite failure assessments which log thier results in the ADR. the recorded 
+   failures can be viewed with the LIST FAILURE command
+
+2) the V$DATABASE_BLOCK_CORRUPTION view
+
+3) error messages in standard ouput 
+
+4) alert log and user trace files (identified in V$DIAG_INFO view)
+
+5) ANALYZE TABLE and ANALYZE INDEX commands
+
+6) result of DBVERIFY utility
+
+------------------------Setting parameter to detect corruption-------------------------
+
+-- THE following settings impact database performance to varying degrees and require 
+  testing before being used in a production environment
+
+-- initiates checking of data blocksand can prevent memory and data corruption. 
+   (defaulT: FALSE Recommended: FULL or MEDIUM)
+
+DB_BLOCK_CHECKING
+
+-- initates calculation and storage of a checksum in the cache header of every data block
+ when writing it to disk. Checksums help to detect corruption caused by disks, storage
+ systems, or I/O systems (Defualt: TYPICAL, recommended: FULL)
+
+DB_BLOCK_CHECKSUM
+
+----------------------------------Block Media Recovery Requirements-----------------------------
+
+-- target database must be in ARCHIVELOG mode and must be open or mounted with a current
+   control file
+-- bakcups of datafiles with corrpt blocks must be fill or level 0 backups and not proxy 
+   copies. If only proxy copies exist you can restore them to a non-default location on 
+   disk, whereby RMAN will consider them data file copies and serach them for blocks during
+   media recovery
+-- RMAN can only use archived redo logs for recovery (cannot user level 1 incrementals)
+-- if flashback database is enabled on target database RMAN will search the flashback logs
+   first. this speeds up recovery
+
+-- the following view displays blocks marked as corrupt
+
+V$DATABASE_BLOCK_CORRUPTION
+
+--------------------------Block media Recovery------------------------------
+-- block media recovery lowers MTTR and increase availability during media recovery
+-- block media recovery cannot repair logical block corruption. Logical corruption checking
+   is diabled by default. you can specify it by using the LOGICAL option of the BACKUP,
+   RESTORE, RECOVER, and VALIDATE commands
+
+-- recover multiple blocks or a single block
+
+RECOVER DATAFILE 6 BLOCK 3
+DATAFILE 2 BLOCK 43
+DATAFILE 6 BLOCK 183;
+
+-- For a point in time recovery 
+
+RECOVER DATAFILE 20 BLOCK 3 UNTIL SCN 3210000;
+
+-- recover all blocks logged in V$DATABASE_BLOCK_CORRUPTION
+
+RECOVER CORRUPTION LIST;
+
+------------------------------Data File Recovery---------------------------------
+
+-- If the data file being recovered is in a non-critical tablespace 
+   (USERS tablespace), then take the datafile offline so the database can remain open
+   while the recovery is being performed
+-- If the data file being recovered is in a critical tablespace (SYSTEM, SYSAUX, UNDO)
+   then put the database in mount mode and perform the recovery
+
+ALTER DATABASE DATAFILE 20,23 OFFLINE;
+
+RESTORE DATAFILE 20, 23;
+
+RECOVER DATAFILE 20,23 UNTIL SCN|SEQUENCE|TIME value;
+
+##########################################################################################
+RESTORING SPFILE
+#########################################################################################
+
+---------------------------Prefered Solution-------------------------------------------
+
+-- Create the spfile from memory or create a PFILE (texfile) from memory so you can make 
+   modifications to it and then recreate the SPFILE from the modified PFILE.
+
+CREATE SPFILE [='path\filename'] FROM PFILE|MEMORY;
+
+CREATE PFILE [='path\filename'] FROM {SPFILE [='path\filename']| MEMORY}
+
+----------------------------alternative solution---------------------------------- 
+
+-- must be in nomount mode
+-- If autobackup is not in FRA then set the DBID for your database
+-- use the TO clause to specify a non_default location for the created spfile
+
+RUN {
+SHUTDOWN IMMEDIATE;
+STARTUP NOMOUNT;
+RESTORE SPFILE TO C:\backup\spfile FROM AUTOBACKUP;
+RECOVERY AREA = 'C:\flash_recovery_area'
+DB_NAME = 'db_name'
+}
+
+-- Restore control file to a specific time. Use 'FROM AUTOBACKUP' if autobackup was configured for this db in RMAN, other
+-- specify a file location
+
+RUN {
+SET UNTIL TIME "TO_DATE('2025-05-19 12:30:00','YYYY-MM-DD:HH24:MI:SS')";
+RESTORE CONTROLFILE TO 'C:\Apps\Oracle\RestoreTest\ORA19C22\control01.ctl' FROM AUTOBACKUP;
+}
+
+########################################################################################
+RESTORING CONTROL FILES
+########################################################################################
+
+-----------------------If other current copies exist-----------------------------
+
+-- simply copy one of the current copies to the location of the missing control file
+   or place a copy of in a new location and then modify the spfile to reflect the change
+
+----------------------------LOSS of ALL control files---------------------------------
+
+-- If ONLINE LOGS ARE AVAILABLE then restore a backup control file, perform complete 
+   recovery, and open the database with RESETLOGS option
+
+-- if ONLINE LOGS NOT AVAILABLE and DATAFILES ARE CURRENT then recreate the control file
+ (from trace or backup) and open the database with RESETLOGS option
+
+-- if ONLINE LOGS ARE NOT AVAILABLE and DATAFILES ARE NOT CURRENT then restore a backup
+   control file, perform PITR, and open with RESETLOGS option
+
+-- the following run block restores the control file and performs a complete recovery
+   you do not need to specify FROM AUTOBACKUP when using the recovery catalog. use the 
+   TO clause to restore a control file to a non-default destination
+
+RUN {
+STARTUP NOMOUNT;
+RESTORE CONTROLFILE FROM AUTOBACKUP;
+ALTER DATABASE MOUNT;
+RECOVER DATABASE;
+ALTER DATABASE OPEN RESETLOGS;
+}
+
+########################################################################################
+RESTORING REDO LOGS
+########################################################################################
+
+-- If a single redo log member of a redo log group is lost drop and recreate the member
+-- if a member of a current redo log group is lost perform a log switch then drop and 
+   recreate the member or copy one of the remaining members into its place 
+
+----------------------------Entire redo log group is lost--------------------------------
+
+1) Group is in INACTIVE state
+
+-- The log group is not needed for instance recovery and is not the current group so it can
+   be dropped and recreated
+
+ALTER DATABASE DROP LOGFILE MEMBER 'C:\APP\ORACLE\ORADATA\ORANT12C\REDO03.LOG';
+
+ALTER DATABASE
+  ADD LOGFILE MEMBER 'C:\APP\ORACLE\ORADATA\ORANT12C\REDO03.LOG' REUSE TO GROUP 3;
+
+2) Group is in ACTIVE state
+
+-- perform a checkpoint to flush the dirty blocks from the buffer cache to the data files 
+   on disk so the transactions in the log group file are no longer needed for instance 
+   recovery. This changes the log group status to INACTIVE. once inactive it can be cleared
+   and or dropped and recreated
+
+-- To perform a checkpoint 
+
+ALTER SYSTEM CHECKPOINT;
+
+
+3) Group is in the CURRENT state
+
+-- The instance crashes. The only option is a restore from backup, perform a cancel-based
+   PITR and open the database with the RESETLOGS option
+
+STEP 1) start database in mount mode
+
+STEP 2) Perform a PITR and create a new database incarnation
+
+-- the RECOVER command applies redo up until the current log. all transactions in current
+   log are lost
+
+RUN
+{ 
+  RESTORE DATABASE;
+  RECOVER DATABASE UNTIL AVAILABLE REDO;
+  ALTER DATABASE OPEN RESETLOGS;
+}
+

@@ -1,0 +1,163 @@
+COLUMN table_name FORMAT A25
+BREAK ON tablespace_name
+
+SELECT tablespace_name, table_name, status
+FROM user_tables
+ORDER BY tablespace_name DESC, table_name;
+CLEAR BREAKS;
+
+############################################################################
+# CONSTRAINTS
+############################################################################
+USER_CONSTRAINTS - describes the constraint definitions on your tables
+USER_CONS_COLUMN  - describes columns owned by you and that are specified in constraints
+
+--------------- CONSTRAINT DEFINITIONS ON TABLES IN A SCHEMA-------------------------
+
+COL table_name FORMAT A20
+COL constraint_name FORMAT A35
+COL search_condition FORMAT A30
+COL owner FORMAT A20
+SET LIN 120
+SET PAGESIZE 300
+
+SELECT table_name, 
+       owner,
+       constraint_name, 
+       constraint_type,
+       status,
+       search_condition
+FROM dba_constraints
+WHERE owner = 'TESTTB'
+ORDER BY 1, 3;
+
+------------------CONSTRAINTS ON COLUMNS------------------------------
+
+SET LIN 200
+SET PAGESIZE 100
+COLUMN constraint_name FORMAT A30
+COLUMN table_name FORMAT A20
+COLUMN column_name FORMAT A22
+COLUMN constraint_type FORMAT A15
+BREAK ON table_name
+
+SELECT uc.table_name, 
+       uc.constraint_name, 
+       uc.constraint_type,
+       ucc.column_name,
+       uc.status
+FROM user_cons_columns ucc, user_constraints uc
+WHERE ucc.constraint_name = uc.constraint_name
+AND ucc.column_name = 'KNOWLEDGE'
+ORDER BY uc.table_name;
+
+CLEAR BREAKS;
+
+----------------FIND ALL REFERENTIAL CONSTRAINTS ON TABLES (ref_table_name)-----------------
+
+-- Find all foreign keys that are referencing a specified table
+SET PAGESIZE 10000 LINES 500
+COLUMN fk_constraint FORMAT A30
+COLUMN fk_table FORMAT A30
+COLUMN fk_column FORMAT A30
+COLUMN ref_table FORMAT A30
+COLUMN ref_column FORMAT A30
+
+SELECT uc.constraint_name AS fk_constraint,
+	   child.table_name AS fk_table,
+	   child.column_name AS fk_column,
+	   parent.table_name AS ref_table,
+	   parent.column_name AS ref_column
+FROM user_constraints uc
+JOIN user_cons_columns parent
+	ON uc.r_constraint_name = parent.constraint_name
+JOIN user_cons_columns child
+	ON uc.constraint_name = child.constraint_name
+WHERE parent.table_name = 'ListDomain' COLLATE BINARY_CI
+	AND parent.column_name = 'Id' COLLATE BINARY_CI;
+	
+SET LINES 100
+		
+------------------------Adding Constraints Table Creation-------------------------------
+
+-- Adding NOT NULL constraint
+
+ALTER TABLE commission
+MODIFY status CONSTRAINT commission_status_nn NOT NULL;
+
+-- Adding PRIMARY KEY constraint
+
+ALTER TABLE test
+MODIFY id CONSTRAINT test_id_pk PRIMARY KEY;
+
+-- Adding FOREIGN KEY constraint (The column being referenced i.e 'agent_id' MUST be a unique or primary key column)
+
+ALTER TABLE client
+ADD CONSTRAINT client_agent_fk FOREIGN KEY (pref_agent)
+    REFERENCES agent(agent_id) DEFERRABLE ENABLE VALIDATE;
+
+-- Add multiple constraints to a table
+
+ALTER TABLE orders
+ADD (CONSTRAINT orders_pk PRIMARY KEY (order_id),
+     CONSTRAINT orders_customer_fk FOREIGN KEY (customer_id)
+      REFERENCES customer(customer_id));
+
+
+-------------------------DISABLE/DROP CONSTRAINTS ON A TABLE----------------------------------
+
+ENABLE VALIDATE is the same as ENABLE. The constraint is checked and is guaranteed to hold for all rows.
+ENABLE NOVALIDATE means the constraint is checked for new or modified rows, but existing data may violate the constraint.
+DISABLE NOVALIDATE is the same as DISABLE. The constraint is not checked so data may violate the constraint.
+DISABLE VALIDATE means the constraint is not checked but disallows any modification of the constrained column
+
+-- Allow inserts of rows that violate the constraint using the following
+
+ALTER TABLE course
+DISABLE NOVALIDATE CONSTRAINT fk_course_to_course;
+
+-- Enables the constraint for incoming inserts and validates current rows in the table
+   to ensure that it complies with the constraint
+
+ALTER TABLE course
+ENABLE VALIDATE CONSTRAINT fk_course_to_course;
+
+-- Delete a constraint
+
+ALTER TABLE course DROP CONSTRAINT fk_course_to_course;
+
+
+------------------------Using the Exceptions table---------------------------------------
+
+-- Report on THE ROWIDS of the rows that violate a constraint. For example it will list
+   all duplicate rows for a primary or unique constraint violation
+
+col ROW_ID for A20
+col OWNER for A10
+col TABLE_NAME for A30
+col CONSTRAINT for A30
+SELECT * FROM exceptions;
+
+-- Check the data in the table:
+
+SELECT rowid, dept_id, dept_name 
+FROM hr.dept2  
+WHERE rowid in ('AAASejAAdAAAACBAAB','AAASejAAdAAAACBAAC');
+
+ROWID                 DEPT_ID DEPT_NAME
+------------------ ---------- ------------------------------
+AAASejAAdAAAACBAAB          2 Admin
+AAASejAAdAAAACBAAC          2 Admin
+
+
+-- Keep on of the rows and delete the other duplicates, then commit the transaction
+
+delete hr.dept2 where rowid='AAASejAAdAAAACBAAB';
+
+-----------------------------TRUNCATING TABLE--------------------------------------------
+
+TRUNCATE TABLE course CASCADE;
+
+-- using cascade to delete child data with referential constraints on the 'course' table 
+   course only works if the referential constraints where created 
+   with an ON DELETE CASCADE option

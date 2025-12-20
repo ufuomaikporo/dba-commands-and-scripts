@@ -1,0 +1,30 @@
+#################################################################################
+Running Database Security Assessment Tool (DBSAT)
+#################################################################################
+
+-- For Oracle Database 10.2.0.5 and later releases
+
+STEP 1) Create a dbsat directory
+
+mkdir –p /home/oracle/dbsat
+
+STEP 2) Download or copy the dbsat.zip file to the database server, and unzip the 
+       file
+
+unzip dbsat.zip –d /home/oracle/dbsat
+
+STEP 3) Run the collector to collect data that will be analyzed by the reporter.
+       you can specify the location and name of the output file. In the example
+     below the ouput file 'output_tst1' will be created in the current directory
+
+./dbsat collect system@ORCL output_tst1
+
+STEP 4) Run the reporter to generate the report. The filename and location of the 
+     output file can be specified similarly to STEP 3)
+
+./dbsat report output_ORCL
+
+STEP 5) unzip the report zip file and view the report. the report is generated in
+    different file formats (xlsx, html, txt, json) 
+
+unzip -q output_tst1_report.zip

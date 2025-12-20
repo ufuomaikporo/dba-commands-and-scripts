@@ -1,0 +1,46 @@
+#######################################################################################
+# AUDIT
+#######################################################################################
+
+How to Create a SQL Server sudit
+
+STEP 1) Create the server audit
+STEP 2) Create a server and or database-level audit specification
+
+------------------------------------ Query audit file
+
+SELECT *
+FROM sys.fn_get_audit_file('C:\FilePath', DEFAULT, DEFAULT);
+GO
+
+------------------------------------------- CREATE A SERVER AUDIT ----------------------------------
+
+-- Creates a server audit called "HIPAA_Audit" with a binary file as the target and no options.  
+CREATE SERVER AUDIT HIPAA_Audit  
+    TO FILE ( FILEPATH ='E:\SQLAudit\' );  
+
+------------------------------------- CREATE SERVER-LEVEL AUDIT SPECIFICATION ----------------------------
+
+USE master ;  
+GO  
+-- Create the server audit.   
+CREATE SERVER AUDIT Payrole_Security_Audit  
+    TO FILE ( FILEPATH =   
+'C:\Program Files\Microsoft SQL Server\MSSQL13.MSSQLSERVER\MSSQL\DATA' ) ;   
+GO  
+-- Enable the server audit.   
+ALTER SERVER AUDIT Payrole_Security_Audit   
+WITH (STATE = ON) ;  
+
+------------------------------------- CREATE DATABASE-LEVEL AUDIT SPECIFICATION --------------------
+
+USE AdventureWorks2022;   
+GO  
+-- Create the database audit specification.   
+CREATE DATABASE AUDIT SPECIFICATION Audit_Pay_Tables  
+FOR SERVER AUDIT Payrole_Security_Audit  
+ADD (SELECT , INSERT  
+     ON HumanResources.EmployeePayHistory BY dbo )   
+WITH (STATE = ON) ;   
+GO  
+

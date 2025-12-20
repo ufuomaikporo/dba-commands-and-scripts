@@ -1,0 +1,194 @@
+mkdir - Creates a directory if it does not already exist
+      -m: set file permissions (as in chmod)
+      -p: create parent directories if they don't already exist.
+          No error if already existing
+      -v: prints a message for each created directory
+      example: mkdir -p first/seond/new_dir
+
+-- The command will create the directory "new_dir" as well as the necessary parent directories "first" and "second"
+
+rmdir - Removes each directory specified if they are empty (equivalent to "rm -d")
+      -p each directory argument is treated as a pathname of which all components
+         will be if removed if they are empty starting with the last component
+      --ignore-fail-on-non-empty: ignore each failure that is due to the directory 
+        not being empty
+      -v: output a diagnostic for every directory that is processed
+      example: rmdir first/second/new_dir
+
+-- This example command will remove the directory "new_dir" along with the directories "first" and "second"
+
+nano - Command line text editor
+     -A: enable smart home key
+     -H: history log
+     -f <file>: Use only this file for configuring nano
+     example: nano .bashrc
+
+The example command will display the contents of the bash configuration script file bashrc 
+
+useradd - Creates a new user account 
+        -d: home directory for the new user
+        -m: Create the user's home directory
+        -U: Create a group with the same name as the user
+        example: sudo useradd -m -U new_user2
+
+-- The example command will create a new user, "new_user2", with a home directory and group that has the same name as the user
+
+usermod - Allows you to modify the user's login information
+        -d: New home directory
+        -m: move contents of the home directory to the new location (use only with -d)
+        -l: New login name
+        -L: lock the user account
+        example: sudo usermod -l new_user2 -d new_user2 -m user2
+
+-- The example command modifies the user "user2" by changing the username to "new_user2",
+   changing the home directory to "new_user2" and moving all the contents from the previous
+   home directory to the new home directory
+
+touch - Primary function is to modify a timestamp. But is commonly used for file creation
+      -a: change only the access time
+      -c: do not create any files
+      -m: change only the modfication time
+      example: touch text.txt
+-- The example command creates a text file "text.txt" in the current directory
+
+grep - Search for patterns in each file
+     -E: Patterns are extended regular expressions
+     -f: take patterns from the file
+     -s: supress error messages
+     -l: print only names of files with selected lines
+     -r: recursive
+     -n: print line number with output lines
+     example: grep -srn Network /etc/*
+
+-- The above command searches for the word Network in all files within the current 
+   specifed directory. Error messages are supressed and line numbers are included in
+   the output
+
+history - Display or manipulate the history list
+        -c: clear the history list (delete all entries)
+        -d offset: delete the history entry at position OFFSET. Negative offset
+                   counts from the end of the history list
+        -r: read the history file and append the contents to the history list
+        -w: write the current history to the history file
+        example: history -r test.txt
+
+-- The exmaple command reads the history file and appends the contents to the file "test.txt"
+
+userdel - Delete a user
+        -f: Force the removal of files
+        -r: remove home directory and mail spool
+        -Z: remove any SELinux mapping for the user
+        example: sudo userdel -f -r user2
+
+-- The example command deletes the user, "user2", as well as removing the home directory,
+   mail spool, and files owned by the user
+
+passwd - change a user account password. normal user can only change their password. Root user can change password for any user on the system
+       -a: report password status on all accounts
+       -d: delete the password for the named account
+       -e: force expire the password for the named account
+       -l: lock the password for the named account
+       -u: unlock the password for the named account
+       example: sudo passwd -l user2
+
+-- The example command locks the password for the account "user2" 
+
+groupadd - Create a new user group
+         -f: exit successfully if the group already exists, and cancel -g if the GID is already used
+         -o: allow creation of groups with duplicate (non-unique) GID
+         -p: use this encrypted password for the new group
+         example: sudo groupadd -f new_user2
+
+-- The example command creates a new group called "new_user2"> it does not return an
+   error message if the user already exists
+
+groupdel - Delete a user group
+         -f: delete the group even if it is the primary group of a user
+         -R: directory to chroot into
+         -P: prefix directory where the /etc/* files are located
+         example: sudo groupdel -f new_user2
+
+-- The example command deletes the user group "new_user2" even if it is the primary
+   group of an existing user
+
+df - show information about the file system for each file in the command argument
+   -a: include all files (pseudo, duplicate, inaccessible file systems)
+   -h: print sizes in powers of 1024 (e.g 1023M)
+   -l: limit listing to local file systems
+   example: df -ah text.txt
+
+-- The example command displays information about the file system for the file
+   "text.txt". the option will include pseudo files, duplicates and hidden files
+   as well as the file sizes in powers of 1024
+
+alias - Define or display aliases
+      -p: print all defined aliases in a reusable format
+      example: alias
+
+-- The example command will display a list of current aliases
+
+du - summarize the disk usage of the set of files (done recursively for directories)
+   -a: write counts of all files, not just directories
+   -h: print sizes in human readable format (e.g., 1K 234M 2G)
+   --time: show time of the last modification of any file in the directory or any
+           of it's subdirectories
+   -s: summurize and display only a total for each argument
+     example: du -ah text.txt
+
+-- The example command will list the disk usage of files and directories in the
+   current directory and will print sizes in human readable form
+
+gzip - Compress or uncompress files (by default, compress files in-place)
+     -c: write on standard output, keep original files unchanged
+     -d: decompress
+     -f: force overwrite of output files and compress links if it already exists
+     -k: keep input files (don't delete)
+     example: gzip -f my_compressed_file.txt
+
+-- The example command will compress the file "my_compressed_file.txt" and name
+   the compressed file as "my_compressed_file.txt.gz". It wil overwite the compressed
+   file if it already exists
+
+gunzip - uncompress files
+       -c: write on standard output, keep original files unchanged
+       -f: force overwrite of output file and compress links if it already exists
+       -l: list compressed file contents
+       example: gunzip -f my_compressed_file.txt.gz
+
+-- The example command will uncompress the file "my_compressed_file.txt.gz" and
+   will overwrite the output file my_compressed_file.txt if it already exists
+
+kill - Manually terminate process
+     -s SIG: SIG is the signal name
+     -n SIG: SIG is the signal number
+     -l: list the available signal names:
+     example: kill -l
+
+-- The example command wil list the names of signals that can killed using the kill command
+
+jobs - Display the status of jobs in the background and foreground
+     -l: lists process IDs in addition to the normal information
+     -n: only lists processes that have changed status since the last notification
+     -p: Lists process IDs only
+     -r: restrict output to running jobs
+     -s: restrict output to stopped jobs
+     example: jobs -l
+
+-- The example command will list the process ID and status of background and foreground
+   jobs
+
+sort - writes sorted concatenation of all files to standard output
+     -b: ignore leading blanks
+     -d: or --dictionary-order: consider only blanks and alphanumeric characters
+     -f: fold lower case to upper case characters
+     -r: reverse sort
+     example: sudo du -hs /etc/* |sort -hr
+
+-- The example command will summarize the disk usage for all files in the /etc/ directory
+   then sort the output based on the disk usage of each file in reverse order 
+   from largest to smallest
+
+which - tells you where a file is in the current directory path
+
+
+    example: which sqlplus

@@ -1,0 +1,529 @@
+######################################################################################
+RECYCLE BIN
+######################################################################################
+
+---------------------Changing recyclebin status----------------------------------------
+
+-- the static inialization parameter RECYCLEBIN must be set to ON to use recyclebin
+-- the change the initialization paramter log in as SYSDBA and do the following
+
+-- view the current iniatialization parameter setting
+
+SHOW PARAMETER RECYCLEBIN
+
+-- disable the recycle bin and restart the database
+
+ALTER SYSTEM SET RECYCLEBIN=OFF SCOPE=SPFILE;
+
+--------------------------data dictionaries------------------------------------------
+
+-- dropped objects from user schema
+
+COL object_name FORMAT a20
+COL original_name FORMAT A20
+
+SELECT original_name, object_name, ts_name, droptime, operation, can_undrop
+FROM recyclebin;
+
+-- View all dropped objects (from all schemas) in database
+
+SET LIN 150
+COL object_name FORMAT a30
+COL original_name FORMAT A15
+COL owner FORMAT A10
+COL ts_name FORMAT A15
+
+SELECT original_name, object_name, owner, ts_name, droptime, operation, can_undrop
+FROM dba_recyclebin;
+
+SET LIN 100
+
+-- DBA_FREE_SPACE shows space occupied by objects in the recycle bin as part of the free
+   space, even though the space is not immediately reclaimed until a PURGE command
+  is issued or space pressure causes the objects to be permanently removed
+
+DBA_FREE_SPACE
+
+------------------------Bypassing the recycle bin----------------------------------------
+
+-- the following drops a permanently deletes a table without placing it in the recyclebin
+
+DROP TABLE PURGE;
+
+-- drops tablespace, tablespace objects, and purges tablespace objects in the recyclebin.
+   Must use this command if tablespace is not empty
+
+DROP TABLESPACE index INCLUDING CONTENTS;
+
+-- drops user, all objects owned by user, and purges user objects in the recyclebin
+
+##########################################################################################
+UNDO TABLESPACE
+##########################################################################################
+
+------------------------------Relavent parameters-------------------------------
+
+-- The following parameters must be set. 
+
+UNDO_TABLESPACE='UNDOTBS1'
+UNDO_MANAGEMENT='AUTO'
+UNDO_RETENTION=900
+
+The UNDO_RETENTION parameter determines how long (in seconds) undo data is held before 
+being marked as expired. Expired undo data is deleted automatically. This parameter does 
+not guarantee that unexpired undo data will not be overwritten. Active transactions are 
+given priority over unexpired undo data in cases where there is not enough space in the 
+undo datafiles
+
+- You can query V$UNDOSTAT.TUNED_UNDORETENTION to determine the amount of time for which
+  undo is retained for the current undo tablespace
+
+To guarantee undo retention is given priority over active transactions use the command 
+below. This means if there is a conflict for space in the undo tablespace active 
+transactions will hang rather than overwriting unexpired undo data until the DBA takes 
+action. To satisfy long retention requirements create a Temporal History (use FDA)
+
+ALTER TABLESAPCE undotbs1 RETENTION {GUARANTEE|NOGUARANTEE};
+
+##########################################################################################
+FLASHBACK FEATURES
+#########################################################################################
+
+-- Can be used when a logical corruption (such as human error) occurs in the database
+-- You can use Flashback  Query, Flashback Version Query, and or
+   Flashback Transaction Query for error analysis
+-- You can use Flashback Transaction Backout, Flashback Table, Flashback Drop, and
+  Flashback Database for error recovery or use the result of the flashback queries
+  to create your own DML operations to repair the erroneous data
+
+BEST PRACTICE
+
+-- use Undo Advisor in Enterprise Manager to get recommendations on availabel undo 
+   retention for various sizes
+-- Use fixed size undo with undo management set to AUTO. Undo retention is automatically
+   tuned for best possible retention based on tablespace size and current system load
+-- can't use query features for a time before the table structure is modified
+
+--------------------------Flashback Query & flashback Version Query--------------------
+
+--Flashback Query
+
+SELECT employee_id, salary FROM employees
+AS OF TIMESTAMP TO_TIMESTAMP('2022-03-02 20:10:00', 'YYYY-MM-DD HH24:MI:SS')
+WHERE employee_id = 200;
+
+-- Flashback Version Query {t1} and {t2} or timestamp values 
+   (you can use the TO_TIMESTAMP function to convert dates or string literals to timestamp)
+
+SELECT versions_xid, salary FROM employees
+VERSIONS BETWEEN TIMESTAMP {t1} and {t2}
+WHERE employee_id = 200;
+
+--------------------------------Using Flashback Table Command---------------------------------
+
+-- must have FLASHBACK ANY TABLE or FLASHBACK object privilege on the specific table
+-- must have SELECT, INSERT, DELETE and ALTER privilege on the table
+-- must enable row movement
+-- can include multiple tables in a single flashback statement. The entire statement is
+   treated like a transaction, so either all tables are successfully flashed back or no
+   tables are flashed back
+-- can flashback TO SCN, TO TIMESTAMP, etc
+-- flashback fails if table constraints are violated
+-- cannot flashback to a time before the execution of a DDL statement that altered the 
+   structure of or shrunk a table involve in the flashback statement
+-- cannot flashback system tables, external tables, and fixed tables
+
+----- OPTION 1) For flashback of an existing table to a past point in time
+
+ALTER TABLE hr.departments ENABLE ROW MOVEMENT;
+
+FLASHBACK TABLE hr.departments TO TIMESTAMP
+TO_TIMESTAMP ('2019-01-25 21:00:00', 'YYYY-MM-DD HH24:MI:SS');
+
+------ OPTION 2) To flashback a dropped table
+
+FLASHBACK TABLE hr.departments TO BEFORE DROP {RENAME TO new_name};
+
+--------------------------Flashback Transaction Query------------------------------------
+
+-- allows you to diagnose probelms in your database and perform analysis and audits of 
+   transactions
+-- can also use the FLASHBACK_TRANSACTION_QUERY view to determine all the necessary SQL
+   statements that can be used to undo changes made either by a specifc transaction or 
+   during a specifc period of time
+-- flashback Transaction Query on transactions with underlying DDL commands displays
+   changes made to the data dictionary tables(dropped objects appear as numbers,
+   dropped users appear as user identifiers). 
+-- When there is not enough undo data for a transaction, a row is returned with a value of
+  UNKNOWN in the OPERATION column of FLASHBACK_TRANSACTION_QUERY
+
+--------------------------Flashback Transaction Backout------------------------------
+
+-- creates a compensating transaction that reverses a past transaction and all dependent 
+   transactions
+-- must have SELECT, FLASHBACK, and DML privileges on all affected tables
+-- not supported across conflicting DDL
+-- inherits data type support from LogMiner
+-- provide a transaction name for the backout operation to facilate auditing or else
+   a name will be automatically generated
+
+-- use Enterprise Manger or execute the following procedure to do a transaction backout
+
+DBMS_FLASHBACK.TRANSACTION_BACKOUT
+
+-- after choosing your backout option, the dependency report is generated in 
+   DBA_FLASHBACK_TXN_STATE and DBA_FLASHBACK_TXN_REPORT views
+
+-- DBA_FLASHBACK_TXN_STATE contains current state of a transaction whether it is alive in
+   the system or backed out
+
+-- DBA_FLASHBACK_TXN_REPORT provides detailed view of all compensating transactions that
+   have been commited in the database. each row in the view is associated with one 
+   compensating transaction
+
+-- review the dependency report that shows all transactions that were backed out
+  then either COMMIT or ROLLBACK to accpet or discard the changes
+
+###########################################################################################
+GUARANTEED RESTORE POINT (GRP) and CLEAN RESTORE POINT
+##########################################################################################
+
+-- guranteed restore points never age out of the control file unlike normal restore points
+  which are kept based on the CONTROL_FILE_RECORD_KEEP_TIME parameter (default: 7 days)
+-- must be explicitly dropped
+-- guarantees that you can perform a FLASHBACK DATABASE command to the current a past SCN 
+   at any time even if flashback logging is disabled (FLASHBACK DATABASE OFF). You need
+   to have enough space in the FRA for flashback logs if enabled
+-- can be used with RECOVER DATABASE command
+-- similar limitations as those of FLASHBACK DATABASE command (shrunk data files,... etc)
+-- can be used like noraml restore points: with Flashback Database, Flashback Table and RMAN
+-- can save space compared to using flashback logging
+
+Requirements for creating a guaranteed restore point
+
+-- database must be in ARCHIVELOG mode
+-- Must configure Fast Recovery Area (FRA)
+-- if Flashback Database is not enabled, the database must be in mount (NOT open) mode when
+ creating the first guaranteed restore point or if all previous guaranteed restore points
+ have been dropped
+
+------------------------Creating a guaranteed restore point------------------------
+
+CREATE RESTORE POINT before_upgrade 
+GUARANTEE FLASHBACK DATABASE;
+
+-- View your all restore points (normal and guranteed)
+
+SET LIN 120
+COL name FORMAT A30
+COL time FORMAT A35
+COL guaranteed FORMAT A10
+
+SELECT name, 
+       scn, 
+       time, 
+       database_incarnation# AS incarnation#, 
+       guarantee_flashback_database AS guaranteed, 
+       storage_size
+FROM V$RESTORE_POINT;
+
+-- Dropping a restore point
+
+DROP RESTORE POINT before_upgrade;
+
+---------------------------Clean PDB Restore Points-------------------------------------
+
+-- normal and guaranteed restore points created for pdbs are visible only within
+  the pdb. pdb clean restore point is visible from outside the pdb
+-- Clean restore point must be created in the cdb root
+-- flashing back a pdb to a clean restore point is faster than other flashbacks
+  because it does not require restoring backups or creating a clone instance
+-- can be created when a pdb is closed and is ONLY allowed in shared undo mode
+-- faster flashbacks than other pdb flashbacks
+-- BEST PRACTICE is to delete pdb guaranteed restore points after pdb flashback operations
+
+----------- Setup pdb clean restore point as follows
+
+CONN / AS SYDBA
+
+ALTER PLUGGABLE DATABASE pdb1 CLOSE;
+
+-- Create a clean restore point at the current scn number 
+
+CREATE CLEAN RESTORE POINT start_step1 FOR PLUGGABLE DATABASE pdb1
+GUARANTEE FLASHBACK DATABASE;
+
+OR
+
+-- Create a clean restore point at a known or specified scn number 
+
+CREATE CLEAN RESTORE POINT start_step1 FOR PLUGGABLE DATABASE pdb1
+AS OF SCN #
+GUARANTEE FLASHBACK DATABASE;
+
+
+-- issue flashback based on pdb clean restore point as follows to perform a PITR in RMAN
+
+RMAN TARGET /
+
+FLASHBACK PLUGGABLE DATABASE pdb1 TO RESTORE POINT start_step1;
+ALTER PLUGGABLE DATABASE pdb1 OPEN RESETLOGS;
+
+
+#########################################################################################
+FLASHBACK DATABASE
+#########################################################################################
+
+-- Fast PITR strategy (no backups needed) for recovery within minutes instead of hours
+-- Faster than restore (using backups) and recovery (using redo) PITR operations
+-- restores changed blocks only
+-- MUST be in ARCHIVELOG mode. Flashback Database needs archived logs to roll forward 
+  changes to the target time for the recovery process
+-- Creates flashback logs in FRA (needs Fast Recovery Area)
+-- used in cases of logical data corruption made by users
+-- either use flashback logging (flashback database must be ON) or create a 
+   guaranteed restore point (GRP) (flashback database can be off) 
+-- Flashback database needs to be turned on to flashback to an SCN, timestamp, 
+   sequence, and restore point. But does no need to be turned on for flash
+   back to a guaranteed restore point
+ 
+
+BEST PRACTICE
+
+-- Tune FRA (use ASM, configure enough disk spindles, etc)
+-- set LOG_BUGFFER initialization parameter to atleast 8MB
+-- flashback retention should be set to atleast 60 minutes or a needed marker might be 
+   deleted when there is space pressure in the flashback logs
+-- the storage system that holds FRA should have nonvolatile RAM or should be configure
+  on top of striped storage volumes with reatively small strip size ssuch as 128KB
+-- use physical standby database to test flashback logging
+-- use V$FLASHBACK_DATABASE_LOG view to size log space after workload that runs longer than
+  the flashback retention period
+-- create guaranteed restore pint (GRP) without enabling flashback logging to save disk 
+    space for workloads where dame blocks are repeatedly updated. then drop GRP after
+    workload to reclaim space
+
+----------------------Configure Flashback Database----------------------------------
+
+-- Database can be open (read/write mode)
+-- check if flashback database is enabled than perform the following steps
+-- flashback database does not need to be enabled to flashback to a resotre point
+
+SELECT flashback_on FROM v$database;
+
+STEP 1) Configure Fast Recovery Area (FRA)
+
+STEP 2) Set the Retention target (in minutes). This is not a guarantee. flaskback logs may
+ automatically deleted is space is needed for files in the FRA
+
+ALTER SYSTEM SET DB_FLASHBACK_RETENTION_TARGET=2880 SCOPE=BOTH;
+
+STEP 3) Enable Flashback logging by setting FLASHBACK to ON. setting it to OFF
+      automatically deletes all existing flashback logs. This can only be done in the
+      root container of CDB
+
+ALTER DATABASE FLASHBACK ON|OFF;
+
+-----------------------Monitoting Flashback Database information-------------------------
+
+-- View FRA disk quota. ESTIMATED_FLASHBACK_SIZE uses previous flashback log data to 
+estimate the disk space needed in FRA for flashback logs to meet retention target.
+FLASHBACK_SIZE gives the current size in bytes of flashback data
+
+
+SELECT estimated_flashback_size, flashback_size/1024/1024 size_mb
+FROM V$FLASHBACK_DATABASE_LOG;
+
+-- Determine current flashback window. OLDEST_FLASHBACK_SCN and OLDEST_FLASHBACK_TIME give
+  the lowest SCN and time to which you can flashback the database
+
+SELECT oldest_flashback_scn, oldest_flashback_time
+FROM v$flashback_database_log;
+
+-- Monitor logging overhead in the Flashback Database logs(flashback logs). Contians 
+ 24 hours of info with each row representing a one-hour time interval
+
+SELECT * FROM V$FLASHBACK_DATABASE_STAT;
+
+-- FLASHBACK_DATA, REDO_DAT, and DB_DATA represent the amount of flashback, redo and data
+ block read and writes in bytes during the time interval of 1 hour for each row. 
+ the ESTIMATED_FLASHBACK_SIZE is the estimated flashback space needed for the interval
+
+SELECT begin_time, end_time, flashback_data/1024/1024 flash_data_mb, 
+      db_data/1024/1024 db_data_mb, redo_data/1024/1024 redo_data_mb,
+      estimated_flashback_size AS est_fbsize
+FROM v$flashback_database_stat;
+
+-- You can query the V$RECOVERY_FILE_DEST view to vew information in the FRA. 
+name: FRA name with location string
+space_limit: disk limit specified in DB_RECOVERY_FILE_DEST_SIZE parameter
+space_used: disk space used by FRA in bytes
+space_reclaimable: space that can be reclaimed by deleting obolete, redundant, and other 
+         low priority files through space management algorithm
+number_of_files: number of files in FRA 
+
+
+SELECT name, space_limit/1024/1024 AS quota_mb,
+       space_use/1024/1024 AS used_mb,
+       space_reclaimable/1024/1024 AS reclaimable_mb,
+       number_of_files AS files
+FROM v$recovery_file_dest;
+
+
+-------------------------Using Flashback Database----------------------------------------
+
+-- Flashing back a CDB root flashes back the entire CDB (all PDBS included
+-- flashback database needs to be turned on to flashback to an SCN, timestamp, 
+   sequence, and restore point. But does no need to be turned on for flash
+   back to a guaranteed restore point
+
+CANNOT use Flashback Database if.......
+
+-- the control file has been restored or recreated
+-- a tablespace has been dropped
+-- a data file has been shrunken in size. You can take the data file offline before using 
+ the flashback command. The data file will not be flashed back
+
+STEP 1) mount the database in exclusive mode
+
+STARTUP EXCLUSIVE MOUNT
+
+STEP 2) Issue one of the following commands. Use the TO BEFORE RESETLOGS clause to flash 
+       back to before the last RESETLOGS operation
+
+FLASHBACK DATABASE TO TIME = 
+        "TO_DATE('2009-05-27 16:00:00', 'YYYY-MM-DD HH24:MI:SS')";
+
+FLASHBACK DATABASE TO SCN=23565;
+
+FLASHBACK DATABASE TO SCN 23565;
+
+FLASHBACK DATABASE TO SEQUENCE=223 THREAD=1;
+
+-- flashback to an hour before current server time
+
+FLASHBACK DATABASE TO TIMESTAMP(SYSDATE - 1/24)
+
+FLASHBACK DATABASE TO RESTORE POINT b4_load;
+
+STEP 3) review the changes by opening the database in read-only mode. Repeat operation
+    of the correct target was not reached
+
+ALTER DATABASE OPEN READ ONLY;
+
+STEP 4) If the changes are good then shutdown the database and open it in
+    read/write mode with RESETLOGS option (creates new incarnation)
+
+-- You can monitor the Flashback Database progress with the V$SESSION_LONGOPS view
+
+-------------------------Using flashback on PDB---------------------------------
+
+-- You do not need to specify the pdb name in ALTER PLUGGABLE DATABASE commands if the 
+  container is set to the pdb name using the ALTER SESSION command
+
+--------------STEP 1)-- Place the PDB in mount mode by using one of the following using
+   
+
+-- Option 1)
+
+CONN sys@pdb1 as sysdba 
+
+OR 
+
+ALTER SESSION SET CONTAINER=orclpdb;
+
+-- then either 
+
+SHUTDOWN IMMEDIATE
+
+OR
+
+ALTER PLUGGABLE DATABASE CLOSE;
+
+-- Option 2) From another container or root container
+
+ALTER PLUGGABLE DATABASE orclpdb CLOSE;
+
+-----------------STEP 2)-- Issue flashback command
+
+FLASHBACK PLUGGABLE DATABASE pdb1 TO SCN 411010;
+
+---------------STEP 3) Open pdb in read only mode to see if the error is fixed
+
+-- if the container name for the session is set to pdb name
+
+ALTER PLUGGABLE DATABASE OPEN READ ONLY;
+
+-- if the container name for the session is not set to the pdb name
+
+ALTER PLUGGABLE DATABASE orclpdb OPEN READ ONLY
+
+-------------STEP 4) If the error is fixed, then open the pdb with RESETLOGS
+
+-- The FORCE clause does a shutdown abort then reopens the pdb 
+
+ALTER PLUGGABLE DATABASE pdb1 OPEN RESETLOGS FORCE;
+
+##########################################################################################
+FLASHBACK DATA ARCHIVE (FDA)
+#########################################################################################
+
+Flash queries work across the following DDL changes when using FDA. All other DDL changes 
+are not automatically supported
+
+-- ADD, DROP, RENAME, MODIFY of columns
+-- DROP and TRUNCATE of partitions
+-- RENAME and TRUNCATE of tables
+
+The following DDLs cause error ORA-55610 when used on a table enabled for FDA
+
+-- ALTER TABLE.... with UPGRADE clause
+-- ALTER TABLE statement that moves or exchanges a partition or subpartition operation
+-- DROP TABLE statement
+
+-- All DDL changes that are automatically supported can be excuted through the
+   DBMS_FLASHBACK_ARCHIVE package. USE WITH CARE. to do so you must follow steps not 
+   specified here
+
+----------------------Create temporal history & enable archiving----------------------
+
+STEP 1) Create a tablespace to hold the history data
+
+STEP 2) Create a flashback data archive, assign it to the tablespace, and specify its
+    retention period (need FLASHBACK ARCHIVE ADMINISTER system privilege)
+
+-- the OPTIMIZE DATA clause create the FDA with compression and deduplication
+-- data is automatically purged based on the RETENTION policy
+
+CREATE FLASHBACK ARCHIVE fdal TABLESPACE fda_tbs1
+OPTIMIZE DATA QUOTA 10M RETENTION 1 YEAR;
+
+STEP 3) Alter the base tables to enable archiving and assign it to a flashback archive
+       (need FLASHBACK ARCHIVE object privilege)
+
+ALTER TABLE hr.employees FLASHBACK ARCHIVE fdal;
+
+-- the flashback data archive fdal can have more than one tablespace. Create different
+  flashback data archives for different retention durations
+
+-- NOTE**: tables compressed with Hybrid Columnar compression cannot be enabled for FDA
+
+-- to disable optimization for FDA history tables
+
+ALTER FLASHBACK ARCHIVE fdal NO OPTIMIZE DATA;
+
+--------------------------Collecting user context----------------------------------
+
+-- set user context collection parameter (NONE (default), TYPICAL, ALL). TYPICAL setting
+  collects database user ID, global user ID, client identifier, service name, module name
+  and host name
+
+EXEC DBMS_FLASHBACK_ARCHIVE.SET_CONTEXT_LEVEL('TYPICAL')
+
+-- obtain the user context information using the following. each row cna be read only by
+   the DBA and the owner of the transaction
+
+SELECT DBMS_FLASHBACK_ARCHIVE.GET_SYS_CONTEXT (VERSION_XID, 'USERENV', 'SESSION_USER'),
+                                   versions_xid, versions_starttime, versions_endtime,
+                                    employee_id, salary
+FROM hr.employees VERSIONS BETWEEN SCN MINVALUE AND MAXVALUE;

@@ -1,0 +1,380 @@
+############################################################################################################
+# General Tips
+########################################################################################################
+
+
+-- Do not use '&' symbol in comments of PLSQL script. It will cause issues (You must use '\' to escape special characters such as '.', '&', etc)
+-- DDL statements must be executed dynamically within a BEGIN...END block (through a variable and/or using EXECUTE IMMEDIATE)
+-- DML statemnts (update, insert, delete, merge, etc) can be executed within BEGIN...END block without dynamic sql as long as table and columns exist
+-- all tables and columns being referenced within a BEGIN...END block must exist before the block is being executed (execute dynamically as a 	  workaround)
+-- No terminating semi-colon is need within an sql statement that is being executed dynamically except if it's within a BEGIN...END block
+-- Remember to commit transactions 
+-- You can modify column definitions without droping foreign keys and indexes
+
+###############################################################################################
+# RETURN/EXIT/BREAK
+###############################################################################################
+
+-- You can use the RETURN keyword to exit a PLSQL script at any point except for within loops
+-- To exit a loop use the BREAK keyword. If you want to exit the script after the loop then put the 
+RETURN keyword after the loop
+
+############################################################################################
+Variables
+###########################################################################################
+
+######################################### Defining global variables ##############################################
+
+-- Using bind variable 
+
+VARIABLE deptno NUMBER
+
+-- Using the DEFINE command
+
+DEFINE deptno = 10
+
+-- Prompt user for input. use the keyword 'PROMPT' to add a space before the program output
+
+ACCEPT p_empno PROMPT 'Enter the employee id: '
+PROMPT
+
+############################################-Defining Local variables #########################################
+
+-- defining a local variable
+
+v_deptno NUMBER(3);
+
+-- Using the data type of a table column to define a variabel datatype (table.column%TYPE)
+
+v_deptno dept.dept_no%TYPE
+
+-------------------------------------- RECORD VARIABLE AND ROWTYPE ----------------------------------
+
+-- Defining a variable as a row type based on the row of a table (table%ROWTYPE) to hold
+   a row of values
+
+dept_record dept%ROWTYPE
+
+-- defining a new record type (rowtype). You can't use table names or keywords for
+  for the name of items in a record-type variable
+
+TYPE emp_record_type IS RECORD
+  (r_ename emp.ename%TYPE,
+   r_sal   emp.sal%TYPE);
+   
+emp_record emp_record_type;
+  
+ ---------------------------------------- TABLE VARIABLES -------------------------------------------
+
+USE CASES: When a dynamic SELECT query is needed to (cursors will not work in this instance)
+
+-- First you define a table type variable then you create an instance of it
+
+OPTION 1)-- Defining a single-column table variable. Example below is a table with single varchar column
+
+TYPE DDL_TABLE_TYPE IS TABLE OF VARCHAR2(5000)
+                INDEX BY BINARY_INTEGER;
+tmpListDomainForeignKeys DDL_TABLE_TYPE;
+
+OPTION 2)-- single-column table variable uing the %TYPE to copy datatype of an existing table column (ename column of emp table)
+
+TYPE DDL_TABLE_TYPE IS TABLE OF emp.ename%TYPE
+                INDEX BY BINARY_INTEGER;
+tmpListDomainForeignKeys DDL_TABLE_TYPE;
+
+OPTION 3) -- Define a table variable using the data structure of the rows of an existing table (i.e. the dept table/cursor)
+
+TYPE DDL_TABLE_TYPE IS TABLE OF dept%ROWTYPE
+                INDEX BY BINARY_INTEGER;
+tmpListDomainForeignKeys DDL_TABLE_TYPE;
+
+OPTION 4) -- Define a table of record type
+
+TYPE emp_record_type IS RECORD
+  (r_ename emp.ename%TYPE,
+   r_sal   emp.sal%TYPE);
+   
+TYPE DDL_TABLE_TYPE IS TABLE OF emp_record_type
+                INDEX BY BINARY_INTEGER;
+				
+tmpListDomainForeignKeys DDL_TABLE_TYPE;
+
+------------------------------------- TABLE VARIABLE METHODS -------------------------------------
+
+EXISTS(n)   Returns TRUE if nth element of the table exists.
+
+COUNT       The number of elements (rows) in the plsql table
+
+FIRST       First and Last index no.s in the table
+LAST        returns NULL if table is empty
+
+PRIOR(n)    Returns index no that preceeds n in the plsql table
+
+NEXT(n)     Returns index no that succeeds n in the plsql table
+
+EXTEND(n,i) Append n copies of the 'i'th element to a plsql table
+            i defaults to NULL n defaults to 1
+
+TRIM(n)     Remove n elements from the end of a plsql table
+            n defaults to 1
+
+DELETE(m,n) Delete elements in range m...n
+            m defaults to = n
+            n defaults to ALL elements
+			
+-- Get the length (number of rows) of the table array	
+		
+tmpListDomainForeignKeys.COUNT;
+
+-- Delete entire tables
+
+tmpListDomainForeignKeys.DELETE;
+
+-- Get the element in column 'r_ename' of row 1 of the table variable tmpListDomainForeignKeys
+
+tmpListDomainForeignKeys(1).r_ename
+
+-- Using a loop
+FOR i IN 1..tmpListDomainForeignKeys.COUNT Loop
+	item := tmpListDomainForeignKeys(i).r_ename; -- for table of record type [table of rows OPTION 3) AND 4) in table variable declaration ]
+	item := tmpListDomainForeignKeys(i) -- for table of a single row [OPTION 1) and 2) in table variable declaration]
+END LOOOP;
+
+#####################################################################################################
+# Assigning values to variable
+######################################################################################################
+
+-- When referencing a variable in th WHERE clause of an SQL statement just use an equal
+  sign. Remember to always prefix bind variables with ":" when referencing them
+
+-- Assigning a value to a local PLSQL variable
+
+v_n NUMBER(3) := 30;
+v_name VARCHAR2(2) := 'John';
+
+-- referencing a bind variable
+
+SELECT MAX(deptno)
+  INTO   :g_max_deptno
+  FROM   dept;
+
+-- Assign a value to a bind variable as follows. Use single quotes to reference 
+   user input values that are string or date literals 
+
+:v_num := 10; 
+
+:v_name := '&name';
+
+-- Referencing a prompt variable (from ACCEPT clause) AND storing value in a variable with SELECT clause
+
+SELECT ordid, orderdate, shipdate, total
+  INTO ord_record
+  FROM ord
+  WHERE ordid = &p_empno;
+
+
+-- Store result of a query into a variable using Dynamic SQL
+
+sql_qry:= ‘SELECT count (*) FROM employees';
+ 
+EXECUTE IMMEDIATE sql_qry INTO emp_tot;
+
+----------------------------------- ASSIGNING VALUES TO A TABLE VARIABLE ----------------------------
+
+-- Assumes table variable is already defined 
+
+METHOD 1) 
+
+ --Store the results of a query in ListDomainInfo table variable with a SELECT statement 
+ 
+SELECT DISTINCT fk_table.columnName,
+				TRIM(Ld.Code) AS Code, 
+				TRIM(Ld.Descr) As Descr
+BULK COLLECT INTO ListDomainInfo
+FROM TableName fk_table
+JOIN ListDomain ld
+	ON fk_table.ColumnName = ld.Id
+	
+METHOD 2)
+
+--Store the results of a query in a table variable using Dynamic SQL
+
+sql_stmt := 'SELECT	DISTINCT fk_table.' + @FKColumnName + ' As OldDomainId, 
+					TRIM(Ld.Code) AS Code, 
+					TRIM(Ld.Descr) As Descr
+			INTO Temp_ListDomainInfo
+			FROM ' + @FKTableName + ' fk_table
+			JOIN ListDomain Ld
+				ON Ld.Id = fk_table.' + @FKColumnName + '';
+
+EXECUTE IMMEDIATE sql_stmt
+BULK COLLECT INTO ListDomainInfo;
+
+------------------------------- REGULAR EXPRESSION FUNCTION ------------------
+-- https://www.techonthenet.com/oracle/regexp_like.php
+
+REGEXP_LIKE (last_name, '^A(*)');
+
+
+###################################################################################
+LOOPS AND CURSORS
+###################################################################################
+
+-------------------------------------------Cursors---------------------------------
+
+-- You can use cursors to loop through the rows in a table. A cursor automatically 
+   stores the rows of the query within it's definition into varibles defined as, 
+   cursor_name. column_name
+
+-- Defining a cursor. A cursor can be defined with a query. The cursor definition must be in DECLARE block
+
+CURSOR emp_cursor IS
+    SELECT ename, sal
+    FROM emp
+    WHERE sal IS NOT NULL
+    ORDER BY sal DESC;
+	
+-------------------------------------------- LOOPS -----------------
+
+-- For-Loop with cursor. emp_rec is a variable local to the for-loop
+
+FOR emp_rec IN emp_cursor LOOP
+    employee := emp_rec.ename;
+	salary := emp_rec.sal;
+    v_counter := v_counter + 1;
+	
+	-- You could also populate the PLSQL 'salary' variable like below
+	SELECT sal INTO salary
+	FROM emp
+	WHERE ename = emp_rec.ename;
+	
+END LOOP;
+  
+
+-- you can create a generic for-loop as follows. You can use this loop  to iterate through each row in a table variable by replacing the 
+	'5' with a variable that stores the number of rows in the table. The 
+	statement for loop excution below is execute as long as 1 <= i <= 5. You can
+	also add an 'EXIT WHEN' command to exit the loop
+
+ FOR i IN 1..5 LOOP
+ 	EXECUTE IMMEDIATE tmpListDomainForeignKeys(i);
+ END LOOP;
+                        
+##################################################################################
+Using Dynamic SQL 
+##################################################################################
+
+------------------------------------------------- GENERAL NOTES ------------------------------
+
+-- EXECUTE IMMEDIATE command can only be used to execute statements that can be executed in SQL*PLUS
+-- DO NOT include the statement-terminating semi-colon ';' in the command input
+
+-----------------------------------------------------------------------------
+
+-- You can execute a dynamic command (aka use variables within the command) by storing your
+   command as a string and executing the command
+
+------- REFERENCE an Object being created within the PLSQL block
+
+ EXECUTE IMMEDIATE q'[INSERT INTO ActionItemPropertyValue
+                (ActionItemRevisionId, ActionItemPropertyId, PropertyValue)
+                SELECT Id, PropertyId, CategoryListDomainId
+                FROM ActionItemRevision
+                WHERE NOT EXISTS (SELECT 1 FROM ActionItemPropertyValue 
+									WHERE ActionItemRevisionId = Id 
+									AND ActionItemPropertyId = PropertyId)]';
+
+EXECUTE IMMEDIATE q'[SELECT Id FROM ActionItemProperty WHERE Name = 'AssignedTo']'
+INTO PropertyId;
+
+ stmt := 'INSERT INTO ActionItemPropertyValue
+                (ActionItemRevisionId, ActionItemPropertyId, PropertyValue)
+                SELECT Id, ' ||  PropertyId || ', CategoryListDomainId
+                FROM ActionItemRevision
+                WHERE NOT EXISTS (SELECT 1 FROM ActionItemPropertyValue WHERE ActionItemRevisionId = Id AND ActionItemPropertyId = ' || PropertyId || ')';
+
+                EXECUTE IMMEDIATE stmt;
+-- Output error message generated in block
+
+DBMS_OUTPUT.PUT_LINE (CHR(10) || SQLERRM);
+
+https://docs.oracle.com/cd/B13789_01/appdev.101/b10807/13_elems017.htm
+
+-- The following example uses dynamic SQL to create a sequence using the result
+   of a query (the max client id from the client table) as the starting value
+   for the sequence. NOTICE** there is no semi-colon at the end of the dynamically generated command
+
+DECLARE
+  ddl_stmt VARCHAR2(200);
+BEGIN
+  SELECT 'CREATE SEQUENCE client_id_seq START WITH ' || MAX(client_id) || ' INCREMENT BY 1'
+  INTO ddl_stmt
+  FROM client;
+
+  EXECUTE IMMEDIATE ddl_stmt;
+END;
+/
+
+-- For string that contains single quotes
+
+ddl := q'[SELECT 'DROP TABLE ' || table_name FROM all_tables WHERE table_name = 'TEST']';
+
+-- For string containing "q'[]'"
+
+ddl := q''[ stmt := q'[SELECT 'DROP TABLE ' || table_name FROM all_tables WHERE table_name = 'TEST']'
+	   ]''
+
+-------------------- Check if an Object exists (Table) -----------------------------
+
+-- Assuming CNT is already defined in the DECLARE section of the block
+SELECT COUNT(*) 
+INTO CNT 
+FROM all_tables
+WHERE table_name = 'LISTDOMAIN';
+
+IF (CNT = 0) -- if the table LISTDOMAIN table does not exist perform the action in the if-block
+THEN
+ 	<action>                  
+END IF;
+
+
+###################################################################################
+THE ACCEPT COMMAND
+######################################################################################
+
+https://docs.oracle.com/database/121/SQPUG/ch_twelve005.htm#SQPUG026
+
+#####################################################################################
+# ERROR HANDLING
+#####################################################################################
+
+-- Show compilation errors from stored procedure. The stored procedure being investigated
+-- must be the only block being ran for the command to work 
+SHOW ERRORS
+
+-- Use DBMS_UTILITY.FORMAT_ERROR_BACKTRACE to get line of code within script that generated error
+-- Use SQLERRM to get error message
+
+EXCEPTION
+        WHEN OTHERS THEN
+        ROLLBACK;
+        DBMS_OUTPUT.PUT_LINE (CHR(10) || 'An error occured while applying upgrade at version ' || dbVersion 
+                            || ', checkpoint ' || dbVersionCheckPoint);
+        DBMS_OUTPUT.PUT_LINE (CHR(10) || DBMS_UTILITY.FORMAT_ERROR_BACKTRACE || CHR(10) ||SQLERRM);
+END;
+
+--------------------------------Raise user defined error ----------------------
+
+DECLARE 
+
+	e_exception_name EXCEPTION;
+BEGIN
+	
+	IF condition THEN
+		RAISE e_exception_name;
+	END IF;
+EXCEPTION
+	WHEN e_exception_name THEN
+	...
+END;
+/

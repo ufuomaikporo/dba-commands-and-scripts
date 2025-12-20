@@ -1,0 +1,57 @@
+#################################################################################
+Running Database Security Assessment Tool (DBSAT)
+#################################################################################
+
+-- For Oracle Database 10.2.0.5 and later releases
+
+STEP 1) Create a dbsat directory
+
+mkdir –p /home/oracle/dbsat
+
+STEP 2) Download or copy the dbsat.zip file to the database server, and unzip the 
+       file
+
+unzip dbsat.zip –d /home/oracle/dbsat
+
+STEP 3) Run the collector to collect data that will be analyzed by the reporter.
+       you can specify the location and name of the output file. In the example
+     below the ouput file 'output_tst1' will be created in the current directory
+
+./dbsat collect system@ORCL output_tst1
+
+STEP 4) Run the reporter to generate the report. The filename and location of the 
+     output file can be specified similarly to STEP 3)
+
+./dbsat report output_ORCL
+
+STEP 5) unzip the report zip file and view the report. the report is generated in
+    different file formats (xlsx, html, txt, json) 
+
+unzip -q output_tst1_report.zip
+
+###################################################################################
+Discoverer
+##################################################################################
+
+-- If you want to make modifications to any dbsat files make a copy first, keep
+  the original as a backup and then modify and use the copy
+
+STEP 1) Set the JAVA_HOME varaible to point to the location of the latest java 
+       installation. Find where the jdk directory is located (might be in the one 
+     of the subdirectories under $ORACLE_HOM). The jdk directory should contain a 
+      bin directory. Might require java version 1.8 or higher
+
+STEP 2) Copy the sample_dbsat.config file and name the copy something along the 
+    lines of custom_dbsat_tst1.config. Modify the file approriately. At minimum
+   you must enter a value for the DB_SERVICE_NAME and set 
+   SENSITIVE_PATTERN_FILES= sensitive_en_ini
+
+STEP 3) Run the discoverer. In the example below the ouput file name is tst2_discover
+      and it's location is in the tst2 directory 
+
+dbsat discover [-n] -c <config_file> <output_file>
+
+./dbsat discover -c Discover/conf/custom_dbsat_tst2.config tst2/tst2_discover
+
+STEP 4) unzip the output file
+

@@ -1,0 +1,304 @@
+DECLARE @DBList NVARCHAR(MAX)
+DECLARE @SQL NVARCHAR(MAX)
+DECLARE @DBName VARCHAR(100)
+DECLARE @IsReadOnly INT
+DECLARE @IsOffline INT
+DECLARE @Username NVARCHAR(100)
+DECLARE @GrantDDLAdmin NVARCHAR(1)
+DECLARE @GrantExecute NVARCHAR(1) 
+DECLARE @Password NVARCHAR(100)
+DECLARE @GrantReadWrite NVARCHAR(100)
+
+USE master
+
+--**************************************************************************************************
+
+SET @Username = 'test' 
+SET @Password = 'test'
+
+--Make sure to set this to make sure DDL_ADMIN role is not granted to the wrong user 
+SET @GrantDDLAdmin = 'N' --OR set to 'Y' to grant DDLADMIN role (DataExchangeUser needs this in both stage and link DB)
+
+-- Grant EXECUTE on dbo schema (to execute stored procedures)
+SET @GrantExecute = 'N' -- SET TO 'Y' to grant privilege to EXECUTE stored procedures (DataExchangeUser needs this in both stage and link DB)
+
+-- Set to 'Y' to give Read and Write permissions otherwise only Read permissions is given
+SET @GrantReadWrite = 'Y'  -- SET TO 'Y' to grant Read and Write privileges SET TO 'N' to grant Read-only (DataExchangeUser needs this in both stage and link DB)
+
+-- If no database list is specifed the user will be added to all databases on the server
+SELECT @DBList = 'LGE_IRASV6_TIMP_UPDM_STAGE_TEST
+LGE_IRASv6_TIMP_UPDM_CONFIG
+LGE_IRASV6_TIMP_UPDM_LINK
+LGE_IRASV6_TIMP_UPDM_LINK_TEST
+LGE_IRASV6_TIMP_UPDM_STAGE
+LGE_IRASv6_TIMP_UPDM_CONFIG_TEST
+timp_config_test_DELME
+LGE_IRASv6_TIMP_UPDM_LINK_Nov_27
+LGE_IRASV6_TIMP_UPDM_LINK_FMETest
+LGE_IRASV6_TIMP_UPDM_STAGE_DELME
+LGE_IRASv6_TIMP_UPDM_CONFIG_Nov_27
+LGE_IRASv6_TIMP_UPDM_STAGE_Nov_27
+Base_IRASv6_STAGE'
+
+--select * from [DRASSQL2016\LATIN1_GENERAL].master.sys.databases
+
+--**************************************************************************************************
+
+IF REPLACE(@DBList, CHAR(32), '') <> ''
+BEGIN
+	SET @DBList = REPLACE(@DBList, ' ', '');
+	SET @DBList = REPLACE(@DBList, CHAR(10), ' ');
+	SET @DBList = REPLACE(@DBList, CHAR(13), '');
+	SET @DBList = REPLACE(@DBList, CHAR(9), '');
+	SET @DBList = REPLACE(@DBList, ' ', ''', ''');
+	SET @DBList = REPLACE(@DBList, ''''', ', '');
+
+	SET @DBList = '''' + @DBList + '''';
+END
+
+IF OBJECT_ID('tempdb..#GrantList') IS NOT NULL
+BEGIN
+	DROP TABLE #GrantList
+END
+
+CREATE TABLE #GrantList (UserName VARCHAR(200), GrantReadWrite CHAR(1), GrantDDLAdmin CHAR(1), GrantExecute CHAR(1))
+
+IF (SELECT DEFAULT_DOMAIN()) = 'EDDYFINDT'
+BEGIN
+	INSERT INTO #GrantList
+	VALUES ('EDDYFINDT\DRAS Users', 'N', 'N', 'N'),
+	('EDDYFINDT\DataExchangeUser', 'Y', 'Y', 'Y')
+END
+ELSE IF (SELECT DEFAULT_DOMAIN()) = 'DRAS'
+BEGIN
+	INSERT INTO #GrantList
+	VALUES ('DRAS\DataExchangeUser', 'Y', 'Y', 'Y')
+END
+
+INSERT INTO #GrantList 
+SELECT @Username, @GrantReadWrite, @GrantDDLAdmin, @GrantExecute
+WHERE @Username NOT IN (SELECT UserName FROM #GrantList)
+
+IF OBJECT_ID ('tempdb..#DBList') IS NOT NULL
+BEGIN
+	DROP TABLE #DBList
+END
+
+CREATE TABLE #DBList (Name NVARCHAR(100))
+
+IF (REPLACE(@DBList, '''', '') LIKE 'ALL%')
+BEGIN
+	INSERT INTO #DBList
+	SELECT name FROM sys.databases
+	WHERE database_id > 4
+	AND name NOT IN (SELECT name FROM #DBList)
+END
+ELSE
+BEGIN
+	SET @SQL = '
+	SELECT name FROM sys.databases
+	WHERE name IN (' + @DBList + ')
+	AND name NOT IN (SELECT name FROM #DBList)
+	'
+	INSERT INTO #DBList
+	EXECUTE (@SQL)
+END
+
+DECLARE UserList_Cur CURSOR FOR
+SELECT * FROM #GrantList
+WHERE UserName IS NOT NULL OR LTRIM(RTRIM(UserName)) <> ''
+
+OPEN UserList_Cur
+FETCH NEXT FROM UserList_Cur INTO @Username, @GrantReadWrite, @GrantDDLAdmin, @GrantExecute
+
+WHILE @@FETCH_STATUS = 0 
+BEGIN
+	-------------------------------------- Create Server Login ---------------------
+
+	IF OBJECT_ID('tempdb..#WindowsUserGroup') IS NOT NULL
+	BEGIN
+		DROP TABLE #WindowsUserGroup
+	END
+
+	CREATE TABLE #WindowsUserGroup (UserName VARCHAR(200), Type VARCHAR(200),
+	Privilege VARCHAR(200), MappedLogin VARCHAR(200),UserGroup VARCHAR(200))
+
+	IF @Username LIKE '%\%'
+	BEGIN
+		SET @SQL = 'INSERT INTO #WindowsUserGroup
+		EXEC xp_logininfo '''+ @Username +''', ''all''';
+
+		EXECUTE (@SQL)
+	END
+
+	IF NOT EXISTS (SELECT * FROM #WindowsUserGroup WHERE UserName = @Username) AND NOT EXISTS (SELECT * FROM sys.server_principals WHERE name = @Username)
+	BEGIN
+		IF @Username LIKE '%\%'
+		BEGIN
+			SET @SQL = 'CREATE LOGIN [' + @Username + '] FROM WINDOWS'
+			EXECUTE(@SQL)
+			SET @SQL = 'GRANT CONNECT SQL TO [' + @Username + ']';
+		END
+		ELSE
+		BEGIN
+			SET @SQL = 'CREATE LOGIN [' + @Username + '] WITH PASSWORD = ''' + @Password + ''',
+			CHECK_POLICY = OFF'
+		END
+
+		EXECUTE (@SQL)
+	END
+
+	-------------------------------- Add User to databases and grant permissions ----------------------
+
+	DECLARE DBList_Cursor CURSOR FOR
+	SELECT * FROM #DBList
+
+	OPEN DBList_Cursor
+	FETCH NEXT FROM DBList_Cursor INTO @DBName
+
+	WHILE @@FETCH_STATUS = 0
+	BEGIN
+
+	---------------------------------------- Create database User ------------------------------------	
+	
+		SET @IsOffline = NULL
+
+		IF (SELECT state_desc FROM sys.databases WHERE name = @DBName) = 'OFFLINE' 
+		BEGIN
+			SET @IsOffline = 1
+			SET @SQL = ' USE master
+			ALTER DATABASE [' + @DBName + '] SET ONLINE WITH ROLLBACK IMMEDIATE'
+
+			EXECUTE (@SQL)
+		END
+
+		SET @IsReadOnly = NULL
+
+		-- Set DB to READ_WRITE if db is in READ_ONLY mode
+		IF (SELECT is_read_only FROM sys.databases WHERE name = @DBName ) = 1
+		BEGIN
+
+			SET @IsReadOnly = 1
+			SET @SQL = 'USE master 
+			ALTER DATABASE [' + @DBName + '] SET SINGLE_USER WITH ROLLBACK IMMEDIATE
+			ALTER DATABASE [' + @DBName + '] SET READ_WRITE WITH NO_WAIT'
+
+			EXECUTE (@SQL)
+		END
+
+		IF @DBName NOT IN ('master', 'model', 'msdb', 'DrasInternal', 'SSISDB')
+		BEGIN
+			SET @SQL = '
+			IF NOT EXISTS (SELECT 1 FROM ' + @DBName + '.sys.database_principals WHERE type IN (''U'', ''G'', ''S'') AND name = ''' + @Username+ ''')
+			BEGIN
+
+				USE ' + @DBName +'
+
+				CREATE USER ['+ @Username +'] FOR LOGIN ['+ @Username +'] 
+				WITH DEFAULT_SCHEMA = dbo
+
+			END
+			ELSE IF EXISTS (SELECT 1 FROM ' + @DBName + '.sys.database_principals WHERE type IN (''U'', ''S'') AND name = ''' + @Username+ ''')
+			BEGIN
+				USE ' + @DBName +'
+
+				DROP USER [' + @Username + '];
+
+				CREATE USER ['+ @Username +'] FOR LOGIN ['+ @Username +'] 
+				WITH DEFAULT_SCHEMA = dbo
+			END;'
+		END
+
+		BEGIN TRY
+			EXECUTE sp_executesql @SQL
+		END TRY
+		BEGIN CATCH
+			PRINT @SQL;
+			THROW 
+		END CATCH
+
+	------------------------------------  Grant Permissions --------------------------------------------
+
+		-- add user to db_datareader and or db_datawriter role (and db_ddladmin role if specified) on non-preprod servers
+		IF (@DBName LIKE '%LINK%' OR @DBName LIKE '%CONFIG%' OR @DBName LIKE '%STAGE%' OR @DBName LIKE '%IRASV6%PROD%'
+			OR @DBName LIKE '%TEST%') AND @@SERVERNAME NOT IN ('CTSQL01', 'SQLDEVPREPROD')
+		BEGIN
+			-- Give users read and write permissions (must have read and write on config dbs)
+			IF (@GrantReadWrite = 'Y') OR (@DBName LIKE '%CONFIG%')
+			BEGIN
+				SET @SQL = 'USE ' + @DBName + '
+				ALTER ROLE db_datareader ADD MEMBER ['+ @Username +']
+				ALTER ROLE db_dataWriter ADD MEMBER ['+ @Username +']' + CHAR(10)
+			END
+			ELSE
+			BEGIN
+				SET @SQL= 'USE ' + @DBName + '
+						
+						   ALTER ROLE db_datareader ADD MEMBER ['+ @Username +']
+						   ALTER ROLE db_datawriter DROP MEMBER ['+ @Username +']
+						   REVOKE UPDATE ON SCHEMA::dbo FROM ['+ @Username +']
+						   REVOKE INSERT ON SCHEMA::dbo FROM ['+ @Username +']
+						   REVOKE DELETE ON SCHEMA::dbo FROM ['+ @Username +']' + CHAR(10)
+			END
+
+			-- Give user ddl admin permissions
+			IF (@GrantDDLAdmin = 'Y' AND @DBName NOT LIKE '%CONFIG%')			
+			BEGIN
+				SET @SQL += 'ALTER ROLE db_ddladmin ADD MEMBER '+ QUOTENAME(@Username) +'' + CHAR(10) 
+			END
+			ELSE 
+			BEGIN
+				SET @SQL += 'ALTER ROLE db_ddladmin DROP MEMBER '+ QUOTENAME(@Username) +'' + CHAR(10)
+			END
+
+		END
+
+		-- Grant permission to execute stored procedures
+		IF (@GrantExecute = 'Y' AND @DBName NOT LIKE '%CONFIG%')
+		BEGIN
+			SET @SQL += 'GRANT EXECUTE ON SCHEMA::dbo TO ['+ @Username +']'
+		END
+		ELSE
+		BEGIN
+			SET @SQL += 'REVOKE EXECUTE ON SCHEMA::dbo TO ['+ @Username +']'
+		END
+
+		EXECUTE (@SQL)
+
+		IF (@IsReadOnly = 1)
+		BEGIN
+			SET @SQL = 'USE master
+
+			ALTER DATABASE [' + @DBName + '] SET READ_ONLY WITH NO_WAIT
+			ALTER DATABASE [' + @DBName + '] SET MULTI_USER WITH ROLLBACK IMMEDIATE'
+
+			EXECUTE (@SQL)
+		END
+
+		IF (@IsOffline = 1)
+		BEGIN
+			SET @SQL = 'Use master
+			ALTER DATABASE [' + @DBName + '] SET OFFLINE WITH ROLLBACK IMMEDIATE'
+
+			EXECUTE (@SQL)
+		END
+
+		FETCH NEXT FROM DBList_Cursor INTO @DBName
+	END
+
+
+	CLOSE DBList_Cursor
+	DEALLOCATE DBList_Cursor
+
+	FETCH NEXT FROM UserList_Cur INTO @Username, @GrantReadWrite, @GrantDDLAdmin, @GrantExecute
+
+END
+
+CLOSE UserList_Cur
+DEALLOCATE UserList_Cur
+
+SELECT CASE WHEN @GrantReadWrite = 'Y' THEN 'READ, WRITE' ELSE ' READ' END
++ CASE WHEN @GrantExecute = 'Y' THEN ', EXECUTE' ELSE '' END 
++ CASE WHEN @GrantDDLAdmin = 'Y' THEN ', db_ddladmin' ELSE '' END
+ + ' permissions/roles where granted to ' + @Username + ' on the following databases'
+SELECT * FROM #DBList

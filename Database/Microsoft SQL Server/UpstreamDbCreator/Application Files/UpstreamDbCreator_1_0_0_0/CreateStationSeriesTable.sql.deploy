@@ -1,0 +1,97 @@
+IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.Tables WHERE table_name = 'StationSeries')
+BEGIN
+	DECLARE @sql nvarchar(max)
+	SET @sql = 'CREATE TABLE [dbo].[StationSeries](
+					[Id] [numeric](10, 0) IDENTITY(1,1) NOT NULL,
+					[Oid] [nvarchar](38) DEFAULT (newid()) NOT NULL,
+					[PriorOId] [nvarchar](38) NULL,
+					[StationSeriesName] [nvarchar](100) NULL,
+					[StationSeriesAltName] [nvarchar](100) NULL,
+					[LineId] [numeric](10, 0) DEFAULT ((0)) NOT NULL,
+					[EffectiveStartDate] [datetime] NOT NULL,
+					[EffectiveEndDate] [datetime] NULL,
+					[BeginStationNum] [numeric](12, 5)  DEFAULT ((0.0)) NOT NULL,
+					[EndStationNum] [numeric](12, 5)  DEFAULT ((0.0)) NOT NULL,
+					[SeriesValueNumber] [nvarchar](12) NOT NULL,
+					[FactorNum] [numeric](12, 3) NOT NULL,
+					[MultiplierNum] [numeric](10, 0) DEFAULT ((1)) NOT NULL,
+					[PrevId] [numeric](10, 0) NULL,
+					[NextId] [numeric](10, 0) NULL,
+					[Remarks] [nvarchar](255) NULL,
+					[SourceTypeGLd] [numeric](10, 0) DEFAULT ((0)) NOT NULL,
+					[CreatedDate] [datetime] DEFAULT (getdate()) NOT NULL,
+					[CreatedUser] [nvarchar](45) DEFAULT (suser_sname()) NOT NULL,
+					[LastModDatetime] [datetime] DEFAULT (getdate()) NOT NULL,
+					[LastModByUserId] [nvarchar](45) DEFAULT (suser_sname()) NOT NULL,
+					[PointCollection] [nvarchar](4000) NULL,
+					[LineloopId] [numeric](10, 0) NULL,
+					[DischargeSubSystemId] [numeric](10, 0) NULL,
+					[SpatialOid] [int] DEFAULT ((0)) NULL,
+					[SourceId] [nvarchar](50) NULL,
+				 CONSTRAINT [PK_StationSeries] PRIMARY KEY CLUSTERED 
+				(
+					[Id] ASC
+				)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+				) ON [PRIMARY]'
+	EXEC sp_executesql @sql
+END
+GO
+
+IF object_id('FK_StrnSer_Ln') IS NULL
+BEGIN
+	DECLARE @sql nvarchar(max)
+	SET @sql = 'ALTER TABLE [dbo].[StationSeries]  WITH CHECK ADD  CONSTRAINT [FK_StrnSer_Ln] FOREIGN KEY([LineId])
+				REFERENCES [dbo].[Line] ([Id])'
+
+	EXEC sp_executesql @sql
+END
+GO
+
+IF object_id('FK_StrnSer_Ln') IS NOT NULL
+BEGIN
+	DECLARE @sql nvarchar(max)
+	SET @sql = 'ALTER TABLE [dbo].[StationSeries] CHECK CONSTRAINT [FK_StrnSer_Ln]'
+
+	EXEC sp_executesql @sql
+END
+GO
+
+IF object_id('FK_StnSer_Sptl') IS NULL
+BEGIN
+	DECLARE @sql nvarchar(max)
+	SET @sql = 'ALTER TABLE [dbo].[StationSeries]  WITH CHECK ADD  CONSTRAINT [FK_StnSer_Sptl] FOREIGN KEY([SpatialOid])
+				REFERENCES [dbo].[STATIONPOLYLINE] ([OBJECTID])'
+
+	EXEC sp_executesql @sql
+END
+GO
+
+IF object_id('FK_StnSer_Sptl') IS NOT NULL
+BEGIN
+	DECLARE @sql nvarchar(max)
+	SET @sql = 'ALTER TABLE [dbo].[StationSeries] CHECK CONSTRAINT [FK_StnSer_Sptl]'
+
+	EXEC sp_executesql @sql
+END
+GO
+
+IF object_id('FK_StnSer_Src') IS NULL
+BEGIN
+	DECLARE @sql nvarchar(max)
+	SET @sql = 'ALTER TABLE [dbo].[StationSeries]  WITH CHECK ADD  CONSTRAINT [FK_StnSer_Src] FOREIGN KEY([SourceTypeGLd])
+				REFERENCES [dbo].[GLdSourceType] ([Id])'
+
+	EXEC sp_executesql @sql
+END
+GO
+
+IF object_id('FK_StnSer_Src') IS NOT NULL
+BEGIN
+	DECLARE @sql nvarchar(max)
+	SET @sql = 'ALTER TABLE [dbo].[StationSeries] CHECK CONSTRAINT [FK_StnSer_Src]'
+
+	EXEC sp_executesql @sql
+END
+GO
+
+

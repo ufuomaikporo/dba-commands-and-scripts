@@ -1,0 +1,129 @@
+########################################################################################
+Networking Tools
+########################################################################################
+
+-- To find ip info you can type "ip" and press tab key twice to see all available options
+   "ip a" shows the ip address
+
+ip a
+
+-- use ping command to test network connectivity. Use the switch option "-c" to specify
+   the number of packets to send and wait for before exiting. Use "-w" option to set the wait
+    time. ping ip address 1.1.1.1 to check internet connectivity
+
+ping -c 5 1.1.1.1
+
+-- ss command displays network connectivity. Use "ss -tl" to get port info  and 
+  use "ss -ltn" to get port info with port numbers
+
+ss -tl
+
+-- For DNS lookup use "dig" (lookup ip address from domain name). Use "nslookup"for reverse
+   DNS lookup entry (get domain name from ip)
+
+dig sait.ca MX
+
+nslookup 142.110.204.12
+
+-- The hostfile is in /etc/hosts and contains host network info
+
+############################################################################
+Services
+############################################################################
+
+-- Use 'service' command to control services. The following command checks the status
+   of the ssh service. You can hit double tab after the service keyword to view all
+   available services. you can look up the service manual "man service"
+
+sudo service ssh status
+
+############################################################################
+Log files
+############################################################################
+
+-- Log files are located in /var/log/
+
+ls var/log
+
+-- journal control'journalctl' is a utility that allows you to query the log files
+
+#################################################################################
+Processes
+##################################################################################
+
+-- ps commmand by itself shows a static list of processes in the current user session. 
+   The '-u' switch shows you processes associated with the user. You can check the manual
+  'man ps' to get info on how to use the command. Use '-e' switch to see all processes
+   and use '-f' for full format listing 
+
+ps -ef
+
+-- use htop command to view a dynamic list of processes. might need to install it first
+
+-------------------------------Stopping proccesses----------------------------
+
+-- Use kill to specify the process id
+
+kill 3984
+
+-- Use killall to specify the process name
+
+kilall firefox-bin
+
+-- To force a unresponsive process to stop use the -9 option
+
+kill -9 firefox
+
+-- You can use ctrl-z to pause a process whereas ctrl-c kills a currently running 
+   process
+
+-- Use fg (foreground) and bg (background) to change the state of a running process
+
+-- place th '&' symbol at the end of a command to cause it to run in the background
+
+-- Use 'jobs' command to list the background jobs
+
+-- Use 'nohup' command to keep a process running without the terminal (so you can
+   log out of the terminal without killing the process)
+
+nohup pint 1.1.1.1 &
+
+-----------------------------Scheduling Processes--------------------------
+
+-- cron is the process and crontab contains the schedule information. Use '-l' to
+   show the crontab configuration file contents. you can also use '-e' to open the crontab
+   configuration file for editing. visit https://crontab.guru for help with creating 
+   schedules
+
+-- the 5 '*' represent minute, hour, day of month, month of year, day of week,
+   respectively 
+
+crontab -l 
+
+crontab -e
+
+-- Use 'at' to see the jobs scheduled for a specified time. may need to install 
+   'at' application
+
+at 4am Friday
+
+-- Use 'atrm' to Remove jobs
+
+-- Use 'arq' to view the pending jobs 
+
+-------------------------Using redirection to capture errors---------------------
+
+The following entry in the contab outputs the date every minute into the crontab 
+file specified below. Any error (specified by "2>") is also redirected to the same 
+file because of the "&1" 
+
+* * * * * date > /home/oracle/cronout.log 2>&1
+
+--------------------------------Creating a Scheduled task----------------------------
+
+-- There are five positions in total. (minutes, hours, 
+
+*/5 * * * *
+
+-- Open system
+

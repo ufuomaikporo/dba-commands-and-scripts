@@ -1,0 +1,49 @@
+CREATE TABLE [dbo].[CustomBaseDataLayer](
+    [Id] [numeric](10, 0) IDENTITY(1,1) NOT NULL,
+    [Name] [varchar](100) NOT NULL,
+    [CreateByUserId] [varchar](45) NOT NULL,
+    [CreateDate] [datetime] NOT NULL,
+    [LastModByUserId] [varchar](45) NOT NULL,
+    [LastModDate] [datetime] NOT NULL
+) ON [PRIMARY]
+GO
+
+ 
+
+ALTER TABLE [dbo].[CustomBaseDataLayer] ADD  DEFAULT (suser_sname()) FOR [CreateByUserId]
+GO
+
+ 
+
+ALTER TABLE [dbo].[CustomBaseDataLayer] ADD  DEFAULT (getdate()) FOR [CreateDate]
+GO
+
+ 
+
+ALTER TABLE [dbo].[CustomBaseDataLayer] ADD  DEFAULT (suser_sname()) FOR [LastModByUserId]
+GO
+
+ 
+
+ALTER TABLE [dbo].[CustomBaseDataLayer] ADD  DEFAULT (getdate()) FOR [LastModDate]
+GO
+
+ 
+CREATE TRIGGER [dbo].[tu_CustomBaseDataLayer] ON [dbo].[CustomBaseDataLayer] FOR UPDATE AS 
+IF EXISTS(SELECT * FROM DELETED)
+BEGIN
+
+ 
+
+    UPDATE dbo.CustomBaseDataLayer
+    SET LastModByUserId = suser_sname(), LastModDate = getdate() 
+    FROM dbo.CustomBaseDataLayer as t, DELETED as d
+    WHERE t.Id=d.Id;
+
+END
+GO
+
+ 
+
+ALTER TABLE [dbo].[CustomBaseDataLayer] ENABLE TRIGGER [tu_CustomBaseDataLayer]
+GO

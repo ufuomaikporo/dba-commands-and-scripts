@@ -1,0 +1,558 @@
+#################################################################################
+# OBJECT DEFINITIONS
+##################################################################################
+
+Option 1) Use Tables
+
+[all|user|dba]_source --- for procedures and triggers
+[all|user|dba]_views --- for views
+
+Use the [user|all]_source table. Each row in source table is a line of code for the object definition.
+		tHE user_source table contains defintions for triggers and stored procedures
+
+SELECT line, text
+FROM user_source
+WHERE name = 'sp_Dx6ConfigV5'
+AND type = 'PROCEDURE';
+
+SELECT text
+	  FROM all_source
+	  WHERE name = UPPER('sp_Dx6ConfigV5')
+	  AND type = 'PROCEDURE'	
+	  AND owner = 'ETP_IRASV6_STAGE_OWNR'
+	  
+
+SELECT text_vc
+FROM user_views
+WHERE view_name = 'v_Viewname'
+
+Option 2) Using the GET_DDL meta-deta package (inputs are case-sensitive)
+
+ set pagesize 0
+ set long 1200
+ select DBMS_METADATA.GET_DDL('TABLE','LISTDOMAIN', 'SchemaName') from DUAL;
+ 
+-- Full syntax
+ DBMS_METADATA.GET_DDL (
+object_type     IN VARCHAR2,
+name            IN VARCHAR2,
+schema          IN VARCHAR2 DEFAULT NULL,
+version         IN VARCHAR2 DEFAULT 'COMPATIBLE',
+model           IN VARCHAR2 DEFAULT 'ORACLE',
+transform       IN VARCHAR2 DEFAULT 'DDL')
+RETURN CLOB;
+
+##################################################################################
+# DATABASE PARAMETERS
+#################################################################################
+
+-- See DB_DOMAIN
+
+SHO PARAMETER DB_DOMAIN
+
+-- See GLOBAL_NAME
+
+SELECT global_name FROM global_name
+
+Change database domain name 
+
+STEP 1) Issue the following commands
+
+ALTER SYSTEM SET DB_DOMAIN='eddyfindt.com' SCOPE=SPFILE SID = '*';
+ALTER DATABASE rename GLOBAL_NAME to "ora19c22.eddyfindt.com";
+--------------------------------------------------------------------
+FOR PDB (the pdb global name will be set on the restart)
+ALTER SYSTEM SET DB_DOMAIN='eddyfindt.com' SCOPE=SPFILE SID = 'PDBName'
+-------------------------------------------------------------------------
+
+STEP 2) Restart the database (shutdown and startup)-
+
+The shutdown is necessary because the scope for the ALTER SYSTEM command was set to SPFILE. I restart is needed for the changes to be made to memory.
+use SCOPE=BOTH where you can to avoid having to restart the database
+
+-------------------Run a count of the objects owned by a user/schema-------------
+
+COL owner format a30
+
+SELECT owner, count(1), object_type 
+FROM dba_object
+WHERE owner = 'KNOWLEDGE'
+GROUP BY owner, object_type
+
+##################################################################################
+SCHEMAS
+##################################################################################
+
+--Find all spatial-enabled schemas in the 
+
+SELECT instance_name FROM sde.instances;
+
+##################################################################################
+Tables
+##################################################################################
+
+---------------------------- QUERIES ----------------------------------
+
+-- find tables in current user schema
+SELECT table_name FROM user_tables
+
+-- find all tables current user has access to
+
+SELECT * FROM all_tables
+
+-- find all tables in the database
+
+SELECT * FROM dba_tables
+
+----------------------------Creating Permanent Tables-----------------------------
+
+Tips:
+
+-- Define nullable columns at the of your create table column definition list
+-- Best to specify the tablespace
+-- if rows are going to change in size PCTFREE can be set to 0. But if rows will grow in
+   size use the formula (100*average_bytes_added_in_updates/average_row_length) to determine
+   the value of PCTFREE for a table
+
+-- The following creates a table in the users tablespace leaving 30% of the space
+   within data blocks in the segment for updates
+
+CREATE TABLE Employee (
+	EEID  Number(7) NOT NULL,
+	Fname CHAR(25),
+ 	Lname CHAR(25))
+	TABLESPACE Users
+	PCTFREE 30;
+
+-- Create table in users tablespace with the primary key index in the index_tbs
+   tablespace
+
+CREATE TABLE Sample (
+ID NUMBER(5),
+CONSTRAINT SamplePK PRIMARY KEY (ID)) Tablespace users
+ENABLE PRIMARY KEY USING INDEX TABLESPACE index_tbs;
+
+-- Creates a table with a primary key and unique indexes in an index_tbs
+   tablespace while the table resides in the 'data' tablespace
+
+CREATE TABLE Sample (
+ID NUMBER(5),
+SIN NUMBER(9),
+CONSTRAINT SamplePK PRIMARY KEY (ID),
+CONSTRAINT SinUnique UNIQUE(SIN))
+TABLESPACE data
+ENABLE PRIMARY KEY USING INDEX TABLESPACE index_tbs
+ENABLE CONSTRAINT SinUnique USING INDEX TABLESPACE index_tbs;
+
+-- The following example creates a table with a primary key index in 
+   a 'user_indx' tablespace. The table is stored in the user_data tablespace
+   and a storage clause is specifed for the table to override the tablespace 
+   storage settings. all constraints are defined at the column level
+
+CREATE TABLE HR.DEPT2 (
+DEPT_ID number (4) CONSTRAINT dept2_dept_id_pk PRIMARY KEY
+	USING INDEX STORAGE (INITIAL 100K NEXT 100K PCTINCREASE 20) TABLESPACE USER_INDX,
+DEPT_NAME varchar2(30) CONSTRAINT dept2_dept_name_nn NOT NULL)
+STORAGE (INITIAL 100K NEXT 100K PCTINCREASE 20)
+PCTFREE 10 PCTUSED 60
+TABLESPACE USER_DATA;
+
+-- Another example. All constraints defined at the column level
+
+CREATE TABLE HR.EMP2 
+(
+EMP_ID number (4) CONSTRAINT emp2_emp_id_pk PRIMARY KEY
+	USING INDEX STORAGE (INITIAL 100K NEXT 100K PCTINCREASE 0) TABLESPACE USER_INDX,
+LAST_NAME varchar2(30) CONSTRAINT emp2_last_name_nn NOT NULL,
+FIRST_NAME varchar2(30) CONSTRAINT emp2_first_name_nn NOT NULL,
+SALARY number(7) CONSTRAINT emp2_salary_ck CHECK (SALARY>=0),
+DEPT_ID number(4) CONSTRAINT emp2_dept2_dept_id_fk REFERENCES hr.dept2(dept_id)
+)
+STORAGE (INITIAL 100K NEXT 100K PCTINCREASE 0)
+PCTFREE 20 PCTUSED 60
+TABLESPACE USER_DATA;
+
+-- Composite primary keys must be defined at the table level
+
+CREATE TABLE supplier
+(supplier_id       NUMBER(8),
+ office            NUMBER(2),
+ supplier          VARCHAR2(80),
+ contact_name      VARCHAR2(30),
+ phone             VARCHAR2(10),
+ fax_no            VARCHAR2(10),
+ email             VARCHAR2(60),
+ website           VARCHAR2(60),
+ address_1         VARCHAR2(50),
+ address_2         VARCHAR2(50),
+ city              VARCHAR2(30),
+ province          VARCHAR2(30),
+ country           VARCHAR2(30),
+ zip_code          VARCHAR2(7),
+ affiliation_code  VARCHAR2(15),
+ CONSTRAINT supplier_pk PRIMARY KEY (supplier_id, office)
+);
+
+-- Create table with an identity column
+
+CREATE TABLE test (ID NUMBER GENERATED [ALWAYS | BY DEFAULT ON NULL] AS IDENTITY 
+				START WITH 1 INCREMENT BY 1 NOCYCLE
+				CONSTRAINT PK_test PRIMARY KEY,
+			NAME VARCHAR2(30),
+			CreatedDate     TIMESTAMP DEFAULT (CURRENT_DATE) NOT NULL,
+			CreatedUser     VARCHAR (45) DEFAULT (SYS_CONTEXT( 'userenv','os_user')) NOT NULL,
+			LastModByUserID VARCHAR (45) DEFAULT (SYS_CONTEXT( 'userenv','os_user')) NOT NULL,
+			LastModDateTime TIMESTAMP DEFAULT (CURRENT_DATE) NOT NULL
+)
+
+-- Copy the structure and data from one table to a new table
+
+CREATE TABLE CopyTable
+AS
+SELECT * FROM OriginalTable;
+
+-- Copy the structure ONLY of a table to a new table
+
+CREATE TABLE Original
+AS 
+SELECT * FROM OriginalTable
+WHERE 1 = 0;
+
+-------------------------------------------- Create a Global Temporary Tables------------------------------
+
+-- Global temporary tables have a persistent structure but impersistent data. That means the 
+   data is deleted either at the end of each  transaction (i.e. after a COMMIT)or when the session ends. 
+	You can use ON COMMIT PRESERVE ROWS (the default is ON COMMIT DELETE ROWS) to preserve the table 
+	data until the session is terminated or until you explictly truncate the table.
+	You have to explicitly drop a global temp table for it to be removed from the database;
+
+CREATE GLOBAL TEMPORARY TABLE supplier_temp 
+(supplier_id number(8), 
+ company varchar2(80), 
+ rep varchar2(80)
+) ON COMMIT PRESERVE ROWS;
+
+- To drop a global temporary table, you must first truncate the table
+
+TRUNCATE TABLE supplier_temp;
+DROP TABLE supplier_temp;
+
+----------------------------------------- CREATE PRIVATE TEMPORARY TABLES --------------------------------------
+
+- Private temporary tables have impersistent data and structure. The table and structure is deleted either
+	at the end of each transaction by default (ON COMMIT DELETE DEFINITION) or at the end of the session
+	with the 'ON COMMIT PRESERVE DEFINITION' clause
+	
+- The table name must begin with the prefix defined in the PRIVATE_TEMP_TABLE_PREFIX initialisation parameter. The default is "ORA$PTT_".
+
+CREATE PRIVATE TEMPORARY TABLE ora$ptt_my_temp_table (
+  id           NUMBER,
+  description  VARCHAR2(20)
+)
+ON COMMIT PRESERVE DEFINITION;
+
+
+-- Find all the temporary tables in a schema
+
+SELECT table_name 
+FROM dba_tables
+WHERE owner = 'TXP_ADMIN'
+AND temporary = 'Y';
+
+-- Drop a temporary table with PRESERVE ROWS clause
+
+TRUNCATE TABLE table_name;
+DROP TABLE table_name;
+
+------------------------------------------------Modifying a Table---------------------------------
+
+-- Rename a table
+
+RENAME booking2 TO books;
+
+-- Adding a foreign key to the previous table
+
+ALTER TABLE supplier
+ADD CONSTRAINT supplier_affiliation_fk FOREIGN KEY (affiliation_code)
+    REFERENCES affiliation(code) DEFERRABLE ENABLE VALIDATE;
+
+-- Renaming a column
+
+ALTER TABLE trip_adhoc 
+RENAME COLUMN trip_start TO start_date;
+
+-- Adding a column
+
+ALTER TABLE trip
+ADD passengers VARCHAR2(120);
+
+-- Modify table column definition. Only the elements mentioned in the ALTER statement are changed
+   every other part of the table definition before the ALTER statement that is not mentioned stays the same
+NOTE** In some instances you can change column datatype with the statement below in others the column must be empty to change column datatype
+
+ALTER TABLE ListDomain MODIFY Id NUMBER(10,0) DEFAULT 0;
+
+-- Re-arrange column order
+
+Example 
+1) Add new column 'c'
+2) make the columns that you want to come after the new column invisible and then make them visible
+	ALTER TABLE t MODIFY (d INVISIBLE, e INVISIBLE);
+	ALTER TABLE t MODIFY (d VISIBLE, e VISIBLE);
+	
+If you make all columns invisible in the same statement all columns being made visible will appear in the order they
+were in before being made invisible. If you want a specific order you may have to use more than one alter statement
+
+-- Delete rows from a table (always use a where clause unless if you wan to delete the entire table data)
+
+DELETE FROM table_name
+WHERE column = value;
+
+-- Truncating a table resets it to how it was before any data was in the table
+TRUNCATE TABLE table_name
+
+-- Dropping a table (CASCADE CONSTRAINTS removes all constraints like foreign keys and PURGE removes the deleted table from recycle bin)
+
+DROP TABLE TableName [CASCADE CONSTRAINTS][PURGE];
+
+-- Dropping table column
+
+ALTER TABLE DROP COLUMN CASCADE CONSTRAINTS;
+
+-----------------------Get number of rows in a schema table------------------------------- 
+
+-- Query to get the size and number of rows in each table in the KNOWLEDGE schema
+
+-- First execute the following procedure to get current statistics on the schema
+
+EXEC DBMS_STATS.gather_table_stats('KNOWLEDGE');
+
+-- Then run the query
+
+COL tablespace_name FORMAT A15
+COL table_name FORMAT A20
+COL owner FORMAT A15
+
+SELECT table_name,
+       ds.tablespace_name,
+       NVL(bytes/1024, 0) size_kb,
+       NVL(num_rows, 0) num_rows
+FROM user_tables dt 
+  JOIN dba_segments ds
+ ON (table_name = segment_name)
+WHERE ds.owner = 'KNOWLEDGE'
+UNION
+SELECT table_name, 
+       tablespace_name, 
+       0,
+       NVL(num_rows, 0) num_rows
+FROM user_tables
+WHERE num_rows = 0
+ORDER BY 1;
+
+##################################################################################
+# Control Flow
+##################################################################################
+
+IF condition THEN
+   {...statements to execute when condition is TRUE...}
+
+ELSE
+   {...statements to execute when condition is FALSE...}
+
+END IF;
+
+##################################################################################
+DML : UPDATE, INSERT, DELETE
+##################################################################################
+
+- **NOTE**: ALWAYS end a transaction (1 or more UPDATE, DELETE, or INSERT statements) in either a COMMIT or a ROLLBACK
+
+----------------------------------------- Correlated Update --------------------------------------------
+
+-- this is similar to performing a JOIN on 'table1' and 'table2' on columns  ----> tab1_column = tab2_column 
+   then updating the 'update_column' of 'table1' with the value from the 'expression' column of 'table2' based on the 
+   JOIN condition
+    
+UPDATE table1 alias1
+SET update_column = (SELECT expression
+			  FROM table2 alias2
+			  WHERE alias1.tab1_column = alias2.tab2_column);
+	   
+##################################################################################
+Synonyms
+##################################################################################
+
+----------------------------Query public synonyms----------------------------------
+
+COL synonym_name FORMAT A20
+COL table_name FORMAT A20
+COL table_owner FORMAT A20
+
+SELECT synonym_name, table_name, table_owner
+FROM dba_synonyms
+WHERE table_owner = 'ACCT_ADMIN';
+
+------------------------------Creating Synonyms-----------------------------------
+
+CREATE PUBLIC SYNONYM prod_tbl FOR prod_acct.production;
+
+#################################################################################
+# DIRECTORIES
+#################################################################################
+
+-- create directory in a container database or pluggable database 
+
+CREATE OR REPLACE DIRECTORY directoryName AS 'C:\App\Oracle\admin\orcl\dpdump'
+
+-- To recreate the DATA_PUMP_DIR directory in a pluggable database
+
+1) ALTER SESSION SET CONTAINER=CDB$ROOT;
+
+2) ALTER SESSION SET "_oracle_script"=FALSE;
+
+3) DROP DIRECTORY DATA_PUMP_DIR
+
+4) ALTER SESSION SET "_oracle_script"=TRUE;
+
+5) CREATE OR REPLACE DIRECTORY DATA_PUMP_DIR AS 'C:\App\Oracle\admin\orcl\dpdump'
+
+##################################################################################
+SEQUENCES
+##################################################################################
+
+CREATE SEQUENCE schema.client_id_seq
+START WITH 1
+INCREMENT BY 1
+MAXVALUE 999
+MINVALUE 1;
+
+COL sequence_owner FORMAT A15
+COL sequence_name FORMAT A20
+
+SELECT sequence_owner, 
+       sequence_name, 
+       min_value, 
+       max_value,
+       increment_by
+FROM dba_sequences
+WHERE sequence_owner = 'TXP_ADMIN';
+
+
+#################################################################################
+Indexes
+##################################################################################
+
+------------------------------------View Indexes---------------------------------
+
+SET LIN 200
+COL index_name FORMAT A20
+COL table_owner FORMAT A15
+COL table_name FORMAT A20
+COL tablespace_name FORMAT A15
+
+SELECT index_name, 
+       index_type, 
+       table_name,
+       table_type,
+       table_owner,
+       tablespace_name,
+       uniqueness
+FROM dba_indexes
+WHERE table_owner = 'PERFTUNE'
+ORDER BY 1;
+
+------------------------------Creating Indexes-------------------------------------
+
+-- The storage and tabelspace clauses are optional. Althought the tablespace clause
+   is recommended since indexes take up less space than table data, they should be
+    stored in a seperate tablespace for tuning and performance reasons
+
+-- Creating a new, unique composite Btree index 
+
+CREATE UNIQUE INDEX name ON 
+tablename(colname [ASC|DESC])
+TABLESPACE tablespacename
+STORAGE( options );
+
+
+-- Creating a new, non-unique composite Btree index 
+		
+CREATE INDEX name ON 
+tablename(colname [ASC|DESC])
+TABLESPACE tablespacename
+STORAGE( options );
+
+-- Create bitmap index (all bitmap indexes are non-unique)
+
+CREATE BITMAP INDEX name ON 
+tablename(colname1, colname2, …)
+TABLESPACE tablespacename
+STORAGE( options );;
+
+-- Create a function index
+
+CREATE INDEX FuncIndx on Employees(UPPER(FirstName));
+
+-- The function index is create for the following query 
+
+SELECT FirstName FROM Employees WHERE FirstName = UPPER(Jones);
+
+
+---------------Run a count of the objects owned by a user/schema-------------
+
+COL owner format a30
+
+SELECT owner, count(1), object_type 
+FROM dba_object
+WHERE owner = 'KNOWLEDGE'
+GROUP BY owner, object_type
+
+######################################################################################
+# TRIGGERS
+######################################################################################
+
+/* Trigger that updates the LastModByUserID, and LastModDateTime row-tracking columns whenever 
+   any row of the table SimCalcFeatureLeak is updated. :NEW and :OLD are psuedotables similar
+   to the DELETED AND INSERTED tables in SQL Server.
+*/
+
+CREATE OR REPLACE TRIGGER tu_SimCalcFeatureLeak 
+   BEFORE UPDATE OR DELETE
+   ON SimCalcFeatureLeak
+   FOR EACH ROW
+DECLARE
+BEGIN
+	DBMS_OUTPUT.PUT_LINE ('The OLD values are: ' || :OLD.LastModByUserID || ' and ' || :OLD.LastModDateTime);
+	DBMS_OUTPUT.PUT_LINE ('The NEW value are: ' || :NEW.LastModByUserID || ' and ' || :NEW.LastModDateTime);
+
+	-- Update the LastModByUserID and LastModDateTime columns in SimCalcFeatureLeak table with the following values
+	:NEW.LastModByUserID := SYS_CONTEXT('userenv','os_user');
+	:NEW.LastModDateTime := SYSDATE;
+END;
+/
+
+-- Enable/disable trigger
+
+ALTER TRIGGER tu_SimCalcFeatureTotal ENABLE/DISABLE
+
+ALTER TABLE inventory
+    ENABLE/DISABLE ALL TRIGGERS;
+
+#######################################################################################################
+# STORED PROCEDURE
+#######################################################################################################
+
+CREATE [OR REPLACE] PROCEDURE procedure_name
+    [ (parameter [,parameter]) ]
+
+IS
+    [declaration_section] -- declare variables and cursors
+
+BEGIN
+    executable_section
+
+[EXCEPTION
+    exception_section]
+
+END [procedure_name];

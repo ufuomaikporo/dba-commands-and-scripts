@@ -1,0 +1,21 @@
+DECLARE @Old_loc NVARCHAR(100) = '\\backups.cgy.dynamicrisk.net\DB_Backups_Nightly\Temporary Backups\'
+DECLARE @New_loc1 NVARCHAR(100) = '\\EDDYFINDT.COM\DRAS-Shares\Test\DBbackupsTest\SQL2019\Nightly\'
+DECLARE @New_loc2 NVARCHAR(100) = '\\dras-util01\DBBackups_Test\'
+DECLARE @DB NVARCHAR(100) = 'EEC_IRASV6_APLWC_STAGE'
+DECLARE @device_name NVARCHAR(MAX) = @old_loc + @DB + '_DELETE_ME.bak'
+DECLARE @sql NVARCHAR(MAX)
+
+--SET @sql = 'BACKUP DATABASE ' + @DB + '
+--TO DISK = ''' + @device_name + '''
+--WITH COPY_ONLY'
+
+SET @sql = 'BACKUP DATABASE ' + @DB + '
+TO DISK = ''' + @device_name + '''
+WITH COPY_ONLY, FORMAT,
+      MEDIANAME = ''SQLServerBackupsTest'',
+      NAME = ''Full Backup of ' + @DB + ''';'
+
+--select @sql
+EXECUTE sp_executesql @sql
+PRINT ''
+PRINT 'BACKUP TO LOCATION: ' + @device_name

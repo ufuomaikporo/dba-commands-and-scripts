@@ -1,0 +1,771 @@
+
+#################################################################################################
+# GENERAL
+#################################################################################################
+
+# You may need to set the exeuction policy to run powershell scripts on a new machine
+
+# To view the current user's execution policy
+
+Get-ExecutionPolicy -Scope CurrentUser
+
+# Change the execution policy to "remoteSigned" or "undefined" to allow the current user to run powershell scripts
+# You can also set the scope to "LocalMachine" to set the execution policy for all users on the server
+
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+
+------------------------ Check if a user is trusted for delegation -----------------------
+
+You may need to install Remote Server Administration Tools (RSAT) using the command below
+
+Get-WindowsCapability -Name RSAT* -Online | Add-WindowsCapability -Online   
+
+- TrustedForDelegation = True means "Trust this user for delegation to any service".
+- TrustedToAuthForDelegation = True means "Trust this user for delegation to specified services only".
+
+Get-ADUser -Identity 'Ufuoma_Ikporo' -Properties TrustedForDelegation, TrustedToAuthForDelegation | 
+Select-Object SamAccountName, TrustedForDelegation, TrustedToAuthForDelegation
+
+####################################################################################################
+# COMMANDS
+####################################################################################################
+
+---------------------------------------------- BREAK/RETURN/EXIT COMMAND ------------------------------------------
+# use EXIT to exit script 
+# Use BREAK command to exit loops and switch-cases. You can name coding blocks and use that name with BREAK command 
+# Block names are preceeded with a ':'
+
+:whileblock While (Condition) 
+{
+	Do something
+	
+	break whileblock #this will cause the script to exit the block named 'whileblock' which is the while loop
+}
+
+------------------------------------------ CONTINUE ---------------------------------------
+
+#Similar to other programming languages, the 'continue' is used within a loop to skips any code below the 'continue' keyword
+#for the current loop iteration
+
+####################################################################################################
+# POWERSHELL FUNCTIONS AND METHODS
+####################################################################################################
+
+------------------------------------- Clear all variables ------------------------------------
+
+# Clear all variables
+Remove-Variable * -ErrorAction SilentlyContinue
+
+-------------------------------------- Check if a variable is null or has whitespace ---------------------
+
+[string]::IsNullOrWhitespace($Test)
+
+------------------------------------------ ENCRYPT AND UNENCRYPT A PASSWORD ------------------------
+
+# prompt user for password and encrypt user entry
+$Password = Read-Host -Prompt "Enter an Oracle user password" -AsSecureString
+
+# unencrypt an encrypted variable (i.e password)
+$UnsecurePassword = (New-Object PSCredential 0, $Password).GetNetworkCredential().Password
+
+------------------------------------------- GET INFO ON OBJECT TYPE AND PROPERTIES --------
+
+Get-Member
+
+----------------------------------------------- EXECUTE POWERSHELL COMMANDS STORED IN A VARIABLE -----------------
+
+Invoke-Expression Or prefix with "&"
+
+------------------------------------------- FIND PROPERTIES OF AN OBJECT --------------------------
+
+# You can select properties of an object and change one or more of the property names in the output as follows
+# In the example below an object with properties 'Line' and 'Name' are being selected. 
+# the object property 'name' is being renamed to 'Surname' in the output
+
+Select-Object -Property Line, @{Name= 'Surname'; Expression = {$_.Name}}
+
+--------------------------------------- FIND A STRING WITHIN A FILE ----------------------
+
+# Looks for the search string "Tag: WEEKLY_FULL_BACKUP" within the file specified in the variable "$TempOutputFile" 
+# and stores the line where the search string is found in the property named 'Line' as well as stores the previous line
+# in the property named 'Precontext'
+
+Select-String -Path $TempOutputFile -Pattern "Tag: WEEKLY_FULL_BACKUP*" -Context 1, 1 | Select-Object -Property Line, @{Name= 'PreContext'; Expression = {$_.Context.PreContext}}
+
+------------------------------------------ LIST FILES IN A DIRECTORY ------------------------------------
+
+$BULocation = "B:\Archive\TEST\"
+
+-- Get a list of files (exclude directories) from backup location excluding ".zip" and ".txt" files
+Get-ChildItem -Path $BULocation* -Exclude "*.txt", "*.zip" -File
+
+-- Get a list of all ".bak" files from the B drive 
+Get-ChildItem -Path B:\ -Recurse -Include "*.bak"
+
+-- Get a list of all files (using .Mode property to filter for files ONLY) no older than 2 days ago
+Get-ChildItem "B:\Fast Recovery Area\ORA19C22\Backups" -Recurse -Exclude "*.txt" | Select-Object -Property Mode, FullName, LastWriteTime `
+        | Where-Object {$_.Lastwritetime -gt (Get-Date).AddDays(-2) -and $_.Mode -eq '-a----'}
+
+------------------------------------------- CHECK IF A FILE OR DIRECTORY EXISTS -----------------------------------------
+
+#Removes the file path in variable $File if the file exists
+If (Test-path $File) 
+{
+	Remove-Item $File	
+}
+
+#Create the directory path if it does not exist
+if (!(Test-path $Directory)) 
+{
+
+	New-item -type directory $Directory | Out-Null
+}
+
+######################################################################################################
+# POWERSHELL REGULAR EXPRESSION OPERATORS
+######################################################################################################
+
+----------------------------------- like -------------------------------------------------
+
+- Allows you to make comparisions using wildcard expressions containing the following ---->   *, ?, and [ ] 
+
+------------------------------------- match --------------------------------------------
+
+- Allows you to use the full list of regular expression characters.
+- Evaluates as true if the string on one side of the match operator is contained anywhere within the 
+	other string  (eg. "WPL_" -match "W" evaluates as true)
+
+-- Quantifiers
+*	--> Zero or more times. (used in a similar way as the '%' in SQL for -like operator)
++	--> One or more times.
+?	--> Zero or one time.
+{n,m} --> At least n, but no more than m times
+
+
+-- Anchors
+^  --> match the start of a string
+$ --> match the end of a string
+
+\w --> match any word character
+\d --> match any number
+.    --> match any character except a new line
+[]   ---> match a single character with a character (and or number) range. You can use multiple brackets for matching more than one  
+        character (neater aproach) or use a single bracket with multiple ranges within it
+
+--------Example 1) of usage with an array 
+
+Look for a database name that starts with 'WPL' in the 'name' property of an array called $DBList
+
+$DBList.name -match '^WPL'
+
+----------- Example 2) In this example '_' is a literal character included in the search
+
+Get-ChildItem "B:\Archive\" | where-object{$_.name -match "\w*OCT_20\w*"} 
+	IS EQUIVALENT TO 
+Get-ChildItem "B:\Archive\" | where-object{$_.name -match "*OCT*20*"} 
+	
+
+#####################################################################################################
+# CREATE COMPRESSED ZIP FILES WITH WINRAR
+#####################################################################################################
+
+------------------------------------  winrar command line -------------------------------------
+
+COMMANDS
+
+u <-------> update archive
+
+SWITCHES
+https://documentation.help/WinRAR/HELPSwitches.htm
+
+-m4 or -m5 <------? m5 for best compression, m4 for good compression
+-ibck   <----------------------> run WinRAR in background
+-ep    <------------------------------> exlude full file path in archive (archive file wihout including the parent folders)
+-ep1   <------------------------------> include subfolders 
+-df    <-------------------------------> delete files after archiving
+
+------------------------------------------- Examples ----------------------------------------------------
+
+1) #Location of the Winrar executable file on operating system  
+
+$WinRar = "C:\Program Files\WinRAR\rar.exe"
+
+2) # Store the list of files you want to compress in a temporary file or in a powershell array variable
+
+$BuSourceList = Get-ChildItem $BULocation\* -Exclude $TempFileName -Recurse | Where-Object {$_.LastWriteTime -ge $CurrentDate.AddDays(-5)}
+$BuSourceList.FullName | Out-File -FilePath 'C:\temp\temp_file.txt' -Force
+
+#compress the list of files in the tempfile into an archive file 'ArchiveFile.rar'
+& $winrar u -ibck -ep -m4 -y 'C:\Temp\ArchiveFile.rar' @'C:\temp\temp_file.txt'
+
+OR
+
+# Compress all the contents of a folder 'C:\Temp\' into the archive file 'ArchiveFile.rar'
+& $winrar u -ibck -ep -m4 -y 'C:\Temp\ArchiveFile.rar' 'C:\Temp\*'
+
+OR 
+
+#Compress the contents of a folder after filtering for files created/modified since 5 days ago. Remove "-ep" switch to include subfolders
+
+$BuList = Get-ChildItem $BULocation -Recurse | Where-Object {$_.LastWriteTime -ge $CurrentDate.AddDays(-5)}
+& $winrar u -ibck -ep -m4 -y 'C:\Temp\ArchiveFile.rar' $BuList  
+
+######################################################################################################
+# AUTOMATING TASKS WITH TASK SCHEDULER
+######################################################################################################
+
+---------------------------------- Actions tab -------------------------------
+
+# SET the action
+
+Action: Start program
+
+# SET the program being run to the location of the powershell.exe file
+
+Program/Script: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe 
+
+# Below is a sample of how to set up a powershell script to be executed with the results being sent to a logfile path specified below
+
+Add Arguments: 
+-noninteractive -nologo -executionpolicy bypass -command "& 'B:\Scripts\Backup Scripts\BackUpSQLServer.ps1' *>> 'B:\Scripts\Backup Scripts\BackUpSQLServer.log'" 
+
+
+#####################################################################################################
+# WORKNG WITH SQL
+#####################################################################################################
+
+------------------------------------------- ESCAPE SCPECIAL CHARACTERS (RMAN) ----------------------------------
+
+v$database ------>  would have to be written as ----> "'v`$database'"
+
+------------------------------------------------ RUN SQL Server command ----------------------------------------
+Note:*** The SqlServer command module needs to be installed with the following command ---> Install-Module -Name SqlServer
+
+- QueryTimeout  is in seconds
+
+$SQL = "Select * from tablename"
+
+Invoke-Sqlcmd -ServerInstance $ServerName -Database master -Query $SQL  -QueryTimeout 200
+
+------------------------------------------------ RUN ORACLE SQL COMMAND ----------------------------------------------
+
+
+--------------------------------- METHOD 1  (stores output in a string NOT ARRAY by default)
+
+NOTE**: MUST inlcude semi-colon at end of sql statments
+
+$GetbackupHistory = "SET PAGES 0
+                     SET FEEDBACK OFF;
+					 COL status FORMAT A10
+                     COL hrs FORMAT 999.99
+
+                    
+
+                    SELECT session_key, 
+	                        input_type, status,
+	                        to_char(START_TIME,'mm/dd/yy hh24:mi') start_time,
+	                        to_char(END_TIME,'mm/dd/yy hh24:mi') end_time,
+	                        elapsed_seconds/3600 hrs 
+                    FROM V`$RMAN_BACKUP_JOB_DETAILS
+                    WHERE start_time > TO_DATE('$StartOfWeek', 'MM/DD/YYYY HH24:MI:SS')
+                    ORDER BY session_key;
+
+                    EXIT"
+
+$DBSchemaList = $GetbackupHistory | sqlplus -silent "$Username/$Password@$ServerName as sysbackup" 
+
+-- Ouput result 
+
+$DBSchemaList
+
+-----------------------METHOD 2 FOR QUERY (stores output in an array)
+-- 
+
+NOTE**: 
+1) DO NOT include ';' at end of query. But you can use '/' at end of query
+2) Must use column aliases where needed in queries. 
+3) Must load Oracle assembly 
+
+---------------- 1) #Load the OracleClient Assembly
+[System.Reflection.Assembly]::LoadWithPartialName("System.Data.OracleClient") | out-null
+
+$GetSchemaQuery = "SELECT username FROM ALL_USERS 
+WHERE 
+  UPPER (USERNAME) IN('SDE',  'BPAZB_PODS5_STAGE', 'PNET', 'PNET_USER') 
+  OR UPPER(USERNAME) LIKE '%_OWNR' 
+  AND USERNAME NOT IN ('SYS','SYSTEM','OUTLN','DBSNMP','WMSYS','ORDSYS','ORDPLUGINS','MDSYS','CTXSYS',
+    'XDB','ANONYMOUS','WKSYS','WKPROXY','ODM','ODM_MTR','OLAPSYS','RMAN','HR',
+    'OE','PM','SH','QS_ADM','QS','QS_WS','QS_ES','QS_OS','QS_CBADM','QS_CB','QS_CS','SCOTT',
+    'BI', 'DIP', 'MDDATA', 'TSMSYS', 'SYSMAN', 'SI_INFORMTN_SCHEMA', 'MGMT_VIEW',
+    'DMSYS', 'EXFSYS', 'IX''JAGDISH','XS$NULL','SPATIAL_WFS_ADMIN_USR','SPATIAL_CSW_ADMIN_USR','OWBSYS_AUDIT','OWBSYS','ORDDATA','FLOWS_FILES','APPQOSSYS','APEX_PUBLIC_USER','APEX_030200')
+ORDER BY USERNAME";
+
+---------------2) # Two Options for Connection string that will be used to connect to Oracle Datapump utility
+--option 1
+$ConnectionString = "Data Source=(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=$ServerName.eddyfindt.com)(PORT=1521)) `
+(CONNECT_DATA=(SERVICE_NAME=$ServerName.eddyfindt.com)));User Id=DBBACKUPUSER;Password=DBBACKUPUSER;"
+
+-- Option 2 using TNSNAME
+$ConnectionString = "User Id=DBBACKUPUSER; Password=DBBACKUPUSER; Data Source=ORA19C"
+
+
+---------------3) #PowerShell Object for setting the string used to open an Oracle database
+$Connection = New-Object System.Data.OracleClient.OracleConnection($ConnectionString);
+
+#Create command to execute $GetSchemaQuery
+$SQLCMD = $Connection.CreateCommand()
+$SQLCMD.CommandText = $GetSchemaQuery
+$SQLCMD.CommandTimeout = 60 #seconds
+
+---------------4) #PowerShell object to store the results from an SQL query
+$SchemaList = New-Object System.Data.DataTable
+
+---------------5) #Connect to the database and and execute the query to fill the datatable object (i.e. get schema list)
+$Adapter = New-Object System.Data.OracleClient.OracleDataAdapter ($SQLCMD)
+[Void]$Adapter.Fill($SchemaList)
+
+-- To print the result of the query from the output array, specify the property with the dot notation
+$SchemaList.username
+
+---------------------- METHOD 2 FOR STORED PROCEDURE
+
+#Create the command to Update the schema statistics
+$SQLCMD = $Connection.CreateCommand()  
+$SQLCMD.CommandTimeout = 180 #seconds
+$SQLCMD.CommandType = [System.Data.CommandType]::StoredProcedure 
+$SQLCMD.CommandText = "BEGIN 
+                            DBMS_STATS.GATHER_SCHEMA_STATS('SYS'); 
+                            DBMS_STATS.GATHER_SCHEMA_STATS('SYSTEM');
+                        END" 
+  
+#Stores output of command for updating schema stats
+$Void = New-Object System.Data.DataTable
+
+#Execute command to gather schema stats
+$Adapter = New-Object System.Data.OracleClient.OracleDataAdapter ($SQLCMD)
+[Void]$Adapter.Fill($Void)
+
+------------------------------------------------- RUN RMAN COMMANDS ------------------------------------------------
+
+METHOD 1: 
+
+#Command template for executing RMAN commands with a substitution variable '{0}'
+$RMANCommand = "RMAN TARGET '`"rman/rman@ora19c as sysbackup`"' CATALOG rman/rman@ora19c22 
+				{0}"
+								
+#the RMAN command from the $RMANCommand string variable is modified by substituting commands in place of the substitution variable '{0}'			
+$SQL = $RMANCommand -f "RUN {EXECUTE SCRIPT Daily_Differential_Backup;}" 
+
+# The commands below pipe the RMAN commands to windows CMD (comand prompt) then the output is piped to an ouput file 
+$SQL | cmd | Out-File -FilePath $ReportFile -Append
+
+METHOD 2:
+
+**************** CONTENTS OF Command File ************************
+
+CONNECT TARGET 'rman/rman as sysbackup' 
+CONNECT CATALOG rman/rman@ORA19C22
+
+SELECT name FROM v$database;
+
+******************************************************************
+
+# Location of command file
+
+$CMDFile = "B:\Scripts\RMAN_Backup_CMDFILE.rman"
+
+RMAN @$CMDFile $CatalogDB "Weekly_Full_Backup" | Out-File $BuLogFile –Append
+
+Method 3:
+
+Use the Invoke-Command cmdlet
+
+----------------------------------------- PERFORM ORACLE DATAPUMP EXPORT OR IMPORT -----------------------------------
+
+ Invoke-Command -ScriptBlock {expdp $User/$PlainTextPass@$ServerName `
+        SCHEMAS= "$($Schema.UserName)" `
+	    DIRECTORY=DATAPUMP `
+        DUMPFILE="$DumpFileName.dmp" `
+        LOGFILE="$DumpFileName.log" `
+        REUSE_DUMPFILES=Y `
+        EXCLUDE=STATISTICS `
+        METRICS=YES `
+        PARALLEL=2 `
+        FLASHBACK_TIME=SYSTIMESTAMP
+        }
+
+-------------------------------------- Display an Objects Properties in a table Format -------------------------------
+
+$DB | Select-Object -Property DBID, DBName, Status, RecoveryModel | Format-Table -AutoSize
+
+########################################################################################################
+# Working with Dates
+########################################################################################################
+
+# Get just the date without time component (Truncates time to start of day)
+
+(Get-Date).Date
+
+#----------------------------------- Get the date for a specified in the mm-dd-yyyy format --------------------
+
+get-date '10-11-2022'
+
+#OR
+
+get-date -Year 2022 -Month 10 -Day 11
+
+#------------------------------------------------ Convert a string to a date --------------------------------
+
+$invoice = '01-Jul-16'
+[datetime]::ParseExact($invoice, 'dd-MMM-yy', $null)
+
+#--------------------------------------------- FORMATNG A DATE -------------------------------------
+
+ $StartTime = Get-Date; `
+ $EndTime = Get-Date.AddDays(1)
+ 
+ $Duration = ($EndTime - $StartTime).ToString("hh'hr:'mm'min:'ss'sec'")
+ 
+ OR
+
+Get-Date -Format "dddd dd-MMM-yy hh'hr:'mm'min:'ss'sec' tt"  ## use 'tt' specifes PM or AM and 'dddd' to specify day of week
+
+
+------------------------------------------- GET A TIMESPAN --------------------------------
+
+#Find the number of days, hours, minutes, etc between 2 dates ($RecentDate and $OlderDate are variables storing dates)
+
+New-Timespan -End $RecentDate -Start $OlderDate
+
+#Find number of days between 2 dates
+
+(New-Timespan -End $RecentDate -Start $OlderDate).Days
+
+------------------------------------------- Beginning of the Month --------------------------
+
+$CurrentDate = Get-Date
+$CurrentDate.AddDays(-$CurrentDate.Day + 1)
+
+----------------------------------------- First n-day of the Week ------------------------------------------
+
+# returns the date for the first Sunday of the week 
+#Assuming the Current Day of the week is Wednesday 
+--- Thursday--> $n=-3 Friday--> $n=-2 Saturday--> $n=-1 Sunday--> $n=0, Monday--> $n=1, $Tuesday--> $n=2
+
+$n = 0
+$CurrentDate = Get-Date
+$StartOfWeek = ($CurrentDate).Date.AddDays($n - ($CurrentDate).DayOfWeek.value__)
+
+-------------------------------------- Get the last friday of the month for a given date ----------------------------
+
+function Get-LastFridayOfMonth([DateTime] $d) {
+    $lastDay = new-object DateTime($d.Year, $d.Month, [DateTime]::DaysInMonth($d.Year, $d.Month))
+    $diff = ([int] [DayOfWeek]::Friday) - ([int] $lastDay.DayOfWeek)
+    if ($diff -ge 0) {
+        return $lastDay.AddDays(- (7-$diff))
+    }
+    else
+    {
+        return $lastDay.AddDays($diff)
+    }
+}
+
+#OR
+
+# Choose the day of the week (0 = Sunday, 1 = Monday ...). This calculates the last specified day of the month
+$DayOfWeek = 5
+$CurrentDate = get-date 
+$NextMonth = $CurrentDate.AddMonths(1)
+$LastDayOfCurrentMonth = $NextMonth.AddDays(-$NextMonth.Day)
+if ([int]$LastDayOfCurrentMonth.DayOfWeek -ge $DayOfWeek) {
+    $LastDayOfWeek = $LastDayOfCurrentMonth.AddDays(-$LastDayOfCurrentMonth.DayOfWeek + $DayofWeek)
+}
+else {
+    $SubtractDays = [int]$LastDayOfCurrentMonth.DayOfWeek + (7 - [int]$DayofWeek)
+    $LastDayOfWeek = $LastDayOfCurrentMonth.AddDays(-$SubtractDays)
+}
+
+
+-- Get the date for the last friday of last month
+
+function Get-LastFridayOfMonth([DateTime] $d) {
+    $lastDay = new-object DateTime($d.Year, $d.Month, [DateTime]::DaysInMonth($d.Year, $d.Month))
+    $diff = ([int] [DayOfWeek]::Friday) - ([int] $lastDay.DayOfWeek)
+    if ($diff -ge 0) {
+        return $lastDay.AddDays(- (7-$diff))
+    }
+    else
+    {
+        return $lastDay.AddDays($diff)
+    }
+}
+
+Get-LastFridayOfMonth((Get-Date).AddMonths(-1))
+
+-- Get the date of the previous friday, given the current date
+
+$Today = Get-Date
+
+if($Today.DayOfWeek.value__ -lt 5)
+{
+    $Today.AddDays(-($Today.DayOfWeek.value__ % 5 + 2) )
+}
+else{
+    $Today.AddDays(-($Today.DayOfWeek.value__ % 5))
+}
+
+#######################################################################################################
+# WORKING WITH FILES
+#######################################################################################################
+
+-------------------------------------- Check if a file exists or is empty -----------------------
+
+---- Check if file exists
+
+if (Test-Path -LiteralPath $file)
+{
+	write-host "file exists"
+}
+
+---- Check if file is empty
+
+if ([IO.File]::ReadAllText($ReportFile))
+{
+	write-host "file is empty "
+}
+
+---------------------------------------- GET CONTENTS OF A FILE DIRECTORY
+
+- For the "Path" parameter using a "\*" will allow you to use other parameters like "Include", "Recurse", etc
+
+Get-ChildItem -Path C:\FileDirectory\* -Include "*.txt", ".log" 
+
+--------------------------------------------- FIND A STRING WITHIN A FILE ------------------------------------
+
+- The command below will search for the string in the "Pattern" parameter
+
+Select-String -Path "FullFilePath.file_ext" -Pattern "successfully completed"
+
+- Get context around string (lines before the target string being searched for)
+
+Select-String -Path .\logfile.txt -Pattern "test2", "String" -Context 1,1 | Select-Object Line, { $_.Context.PreContext, $_.Context.PostContext }
+
+
+------------------------------------------------- TURN THE CONTENTS OF A FILE INTO AN ARRAY --------------------------------
+
+# This separates the rows in the file into an array ($ReportRow), then separates the words (delimited by space)
+# in each row into another array ($ShrunkDBs)
+
+ if ((Test-Path -Path $ShrinkInventoryFile) -eq $true){
+        $CompletedList = Get-Content $ShrinkInventoryFile
+        $ShrunkDBs = $null
+        $ReportRow = $CompletedList -split '`r`n'
+        for ($i = 3; $i -lt ($ReportRow.Count - 2); $i++)
+        {
+            [string[]]$ShrunkDBs += ($ReportRow[$i] -split ' ')[0] 
+        }
+            
+    }
+	
+--------------------------------------------------- Output results to a file ---------------------------------------
+
+$Logfile = C:\temp\logfile.txt
+#Use the 'Force' option to delete the contents of the file before sending output to the file
+
+Write-Output "Before Performing database Shrink Operations`r`n" | Out-File $Logfile -Force
+Write-Output -InputObject $ShrinkReportBefore | Add-Content $Logfile
+Write-Output "`r`nAfter Performing database Shrink Operations`r`n" | Add-Content $Logfile
+Write-Output -InputObject $ShrinkReportAfter | Add-Content $Logfile
+
+-----------------------------  Send sql query result to output csv file without a column heading ---------------------------
+
+#Invoke-Sqlcmd -ServerInstance $ServerName -Database master -Query $DBBackupHistory `
+| ConvertTo-Csv -NoTypeInformation -Delimiter "," | Select-Object -Skip 1 `
+| % {$_ -replace '"', ""} | Out-File ("C:\Temp\test.txt")
+
+-- An alternative way of doing the same thing but it allows you to select individual columsn from the resulting query
+-- In this case the column 'definition' from the query is the only column chosen
+
+$TriggerDefinition = (Invoke-Sqlcmd -ServerInstance $ServerName -Database $DB -Query $FindTriggers) | Select-Object -ExpandProperty definition | Out-String  
+
+-- Set MaxCharLength parameter to prevent output from being truncated
+
+$TriggerList = Invoke-Sqlcmd -ServerInstance $ServerName -Database $DB -Query $SQL -MaxCharLength 8000
+
+----------------------------------------------- Output Object Properties to a File -----------------------------------------
+
+# Sends content of an array of objects (list of properties) to an output file in a tabular format
+
+Write-Output ($ShrinkReportBefore | Format-Table -AutoSize) | Out-File "C:\Temp\logfile_CGY-T470-0001.txt" 
+
+######################################################################################################
+# WORKING WITH ERRORS
+########################################################################################################
+-- Command to trap errors to get more info
+
+try   { #Enter command that produces the error
+	 Add-Type -Path "C:\Program Files\PackageManagement\NuGet\Packages\MimeKit.3.4.1\lib\netstandard2.0\MimeKit.dll"
+}
+catch { # enter the error as $_.Exception.error_name
+     $_.Exception.LoaderExceptions }
+
+
+###############################################################################################################
+# WORKING WITH ARRAYS
+###############################################################################################################
+
+------------------------------------------ TURN AN ARRAY INTO A STRING -------------------------------------------------
+--turn an array ($LowPriorityList) into a string joined by a specified join-character (',')
+
+OPTION 1: An array with multiple rows
+
+ [system.String]::Join(", ", $LowPriorityList)
+ 
+
+------------------------------------- TURN A STRING LIST INTO lIST JOINED BY SPECIFIED CHARACTERS ---------------------
+
+$List = 'DRAS_IRASv6_Integration_Test_6_3_2_DEV.bak
+DRAS_IRASv6_Integration_Test_6_4_0_DEV.bak
+DRAS_IRASv6_TEST_6_4_1_QA.bak
+DRAS_IRASv6_TEST_6_3_2_QA.bak
+EEC_US_TRANS_IRASv6_IRASP_STAGE.bak
+EPCO_IRASV6_LIQUIDS_STAGE.bak
+EEC_US_TRANS_IRASv6_QRA_STAGE.bak
+EPCO_IRASV6_LIQUIDS_STAGE3.bak
+KEY_IRASV5_Upstream.bak
+PAA_CIM_PROD.bak
+PAA_PILOT_IRASv6_Inhouse.bak
+PAA_PODS_PROD.bak
+PPL_IRASv6_PROD_Upgraded.bak
+PPL_IRASv6_PROD
+TMC_UPDM_SOURCE.bak'
+
+$StringList = "'" + $List.Replace("`r`n", "', '") + "'"
+$StringList
+
+------------------------------------------------- TURN A STRING LIST INTO AN ARRAY --------------------------------------
+ 
+ $List = 'DRAS_IRASv6_Integration_Test_6_3_2_DEV.bak
+			DRAS_IRASv6_Integration_Test_6_4_0_DEV.bak
+			DRAS_IRASv6_TEST_6_4_1_QA.bak
+			DRAS_IRASv6_TEST_6_3_2_QA.bak
+			EEC_US_TRANS_IRASv6_IRASP_STAGE.bak
+			EPCO_IRASV6_LIQUIDS_STAGE.bak
+			EEC_US_TRANS_IRASv6_QRA_STAGE.bak
+			EPCO_IRASV6_LIQUIDS_STAGE3.bak
+			KEY_IRASV5_Upstream.bak
+			PAA_CIM_PROD.bak
+			PAA_PILOT_IRASv6_Inhouse.bak
+			PAA_PODS_PROD.bak
+			PPL_IRASv6_PROD_Upgraded.bak
+			PPL_IRASv6_PROD
+			TMC_UPDM_SOURCE.bak'
+
+# This turns the string list (delimited by a new line) into an array with a single property 'DBName'
+$List = @([PSCustomObject]@{DBName = $List.Split("`r`n")})
+
+$List.DBName
+
+----------------------------------------------- SEARCH N REPLACE WITH AN ARRAY -------------------------------------------
+
+# Search and replace multiple values within an array
+
+# Method 1
+
+$NewTrigDefinition = $OldTrigDefinition -replace "Create\w*User\w*", 'CreatedUser' `
+-replace "Create\w*Date\w*", 'CreatedDate' `
+-replace "LastMod\w*User\w*", 'LastModByUserId' `
+-replace "LastMod\w*Date\w*", 'LastModDateTime' 
+
+# Method 2
+$OldTrigDefinition | ForEach-Object {$_ -replace "Create\w*User\w*", 'CreatedUser' `
+-replace "Create\w*Date\w*", 'CreatedDate' `
+-replace "LastMod\w*User\w*", 'LastModByUserId' `
+-replace "LastMod\w*Date\w*", 'LastModDateTime'  } | Out-File "C:\temp\TriggerDefinitions.txt"
+
+------------------------------------------------- Add to an Array using a loop -----------------------------------------
+
+$array = @()
+
+foreach ($item in $list)
+{
+	$array += item
+}
+
+-------------------------------------------- COMPARE TWO OBJECTS AND GET THE DIFFERENCE ----------------------------------------
+
+-- finds items in $before that are not contained in $after (order matters - larger object should comes before the pipe)
+
+$before = Get-Content -Path "C:\temp\BEFORE_TRIGGER_DELETION.txt"
+$after = Get-Content -path "C:\temp\AFTER_TRIGGER_DELETION.txt"
+
+$before | Where-Object{$after -notcontains $_}
+
+# Get the items in an object ($Databases) that are not in the array ($ExcludeDB)
+
+$BackupDBsList = $Databases | Where-Object {$ExcludeDB -NotContains $_.Name}
+
+
+------------------------------------------------- CREATE AND UPDATE AN OBJECT ARRAY ----------------------------------------
+
+# The ToString method is used to convert a Timespan to a string with the specified format
+
+# METHOD 1
+
+$CompletedDBs += @([pscustomobject]@{DBID = $DB.DBID; DBName = $DB.DBName; StartTime = $StartTime; `
+       EndTime = $Endtime; Duration = $TotalTime.ToString("hh'hr:'mm'min:'ss'sec'")})
+
+OR
+
+$SQLServerDBs = @([PSCustomObject]@{ DBName = '10.100.1.104'; Username = 'sa'; Password = 'ty^9!nm~'}
+				  [PSCustomObject]@{ DBName = 'SQL2012'; Username = $null; Password = $null}
+				  [PSCustomObject]@{ DBName = 'SQL2014'; Username = $null; Password = $null}
+				  [PSCustomObject]@{ DBName = 'SQL2016'; Username = $null; Password = $null}
+				  [PSCustomObject]@{ DBName = 'SQL2017'; Username = $null; Password = $null}
+				  [PSCustomObject]@{ DBName = 'SQL2019'; Username = $null; Password = $null}
+				  [PSCustomObject]@{ DBName = 'SQLDEVPREPROD'; Username = $null; Password = $null}
+				  [PSCustomObject]@{ DBName = 'SQL2016\latin1_general'; Username = $null; Password = $null}
+				 )
+
+# METHOD 2
+
+$BeforeReindex = New-Object System.Collections.ArrayList
+foreach($DB in $nosession) 
+{
+    $IndexStats = Invoke-Sqlcmd -ServerInstance $ServerName -Database $DB.DBName -Query $GetIndexStats 
+ 
+    $FragPercentage = ($IndexStats | Measure-Object -Property FragmentationPercentage -Average -Maximum)
+    $PageCount = ($IndexStats | Measure-Object -Property page_count -Average -Maximum)
+
+	# Create the columns of the array
+    $temp = New-Object System.Object
+    $temp | Add-Member -MemberType NoteProperty -Name "DBName" -Value $DB.DBName
+    $temp | Add-Member -MemberType NoteProperty -Name "MaxFrag" -Value $FragPercentage.Maximum
+    $temp | Add-Member -MemberType NoteProperty -Name "AvgFrag" -Value $FragPercentage.Average
+    $temp | Add-Member -MemberType NoteProperty -Name "MaxPageCount" -Value $PageCount.Maximum
+    $temp | Add-Member -MemberType NoteProperty -Name "AvgPageCount" -Value $PageCount.Average
+
+	# Add a new row entry (made from columns of the array) to the array object
+    $BeforeReindex.Add($temp) | Out-Null 
+}
+
+# ACCESSING Object properties
+
+foreach($object in ($SQLServerDBs | ForEach-Object {$_}))
+{
+    $object.DBName
+}
+
+------------------------------------------- FILTER RESULTS FROM AN ARRAY ----------------------------------------
+
+#Searches an array of objects for objects whose name property is 'ETP_IRASv6_UAT_LINK'
+
+$backupdbslist | where-object {$_.name -eq 'ETP_IRASv6_UAT_LINK'}
+
+
+##################################################################################
+# Useful windows commands
+##################################################################################
+
+-- Check if you can connect to port 443 (TLS default) on remote server DRAS-RDW25
+Test-NetConnection -Port 443 -ComputerName DRAS-RDW25 -InformationLevel Detailed 

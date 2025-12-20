@@ -1,0 +1,239 @@
+###########################################################################
+Remote Access
+###########################################################################
+
+STEP 1) Install ssh on both the client and target servers. To install ssh 
+      server on the Linux server through terminal, use the command
+
+sudo apt install openssh-server
+
+-- To view file permissions on windows ("ll" in linux) in powershell
+
+get-acl <filename>
+
+-- Check that the network adapter is set to bridged on the VM
+
+STEP 2) Create a directory (.ssh) to store the keys
+
+STEP 2) Create an ECDSA-25519 key-pair on your client machine 
+
+-- On windows
+
+ssh-keygen.exe -t ed25519
+
+-- On Linux
+
+ssh-keygen -t ed25519
+
+STEP 3) Copy your public key to your Target machine (Linux). Create the the 
+      .ssh folder and save to key to the authorized_keys file
+
+mkdir /home/username/.ssh
+
+sudo nano home/username/.ssh/authorized_keys
+
+STEP 5) Connect to the remote machine
+
+ssh <username>@<remote_machine_ip>
+
+-----------------------------Configuring ssh alias--------------------------------
+
+-- configure ssh alias on the client machine by creating a config file
+   in the .ssh folder and save it without a file extention. The only 
+   required parameters are host alias (for Linux machine) and the hostname
+
+Host host_alias: The host_alias is the alias you want to use to connect
+
+Hostname myserver.com: the domain name or ip address of the target (Linux)
+   type "ip a" or "ifconfig" in Linux terminal to get the ip address
+
+User uername: Username on the target that you are connecting to 
+
+OPTIONAL 
+
+IdentifyFile path/filename: For authentication public key file if there is
+                            more than one
+LocalForward 3306 10.8.4.20:3406 -- connects the 2 ports on both machines
+     to allow the local machine to access services on the remote machine network
+
+To connect with local forwarding 
+ssh -L <local_port>:<remote_service_ip_address>:<remote_service_port> username@remote_machine_ip
+
+RemoteForward 44422 localhost:22 -- is the reverse of local forwarding. it 
+      allows The remote machine to connect to services on the local machine
+
+DynamicForward
+
+ForwardX11 yes
+
+---------------------------Disable Password Login---------------------------------
+
+-- Disabling password login means you can only connect using the authentication key
+
+-- Open the sshd_config file
+
+sudo nano /etc/ssh/sshd_config
+
+-- DO a search for the word Password in the file by pressing ctrl+w and typing "PasswordAuthen"
+
+-- Remove the comment symbol (#) and set PasswordAuthentication to 'no' 
+
+-- Reload the ssh service
+
+sudo service ssh reload
+
+-----------------------Copy Files From one Machine to Another----------------------
+
+-- Copy from Remote machine to Local machine. You can use the absolute path for the file
+   or relative path if it's somwhere in your home user directory
+
+scp <username>@<remote_ip>:<file> <local_directory>
+
+scp ufuoma@10.163.99.152:lab5.txt Desktop/
+
+-- Copy from Local Machine to Remote machine
+
+scp Desktop/file_name.txt ufuoma@10.163.99.152:Desktop/
+
+#########################################################################################
+User Management
+#########################################################################################
+
+-------------------------------View User info-----------------------------------
+
+View info on all users by displaying the contents of the passwd file. it displays The 
+following information
+-- Username
+-- Password as a 'x' character is it is set
+-- User id (UID)
+-- Group id (GID)
+-- User ID info
+-- Home directory
+-- Command/shell
+
+sudo cat /etc/passwd
+
+OR
+
+-- info about user groups
+
+id <username>
+
+OR
+
+id -nG <username>
+
+-----------------------View Password Info------------------------------
+
+To view password information view the /etc/shadow file. Which contains............
+-- Username
+-- Password: an encrypted password
+-- last password change: Days since Jan 1 1970 that the password was last changed
+-- Maximum: The maximum number of days that the password is valid, after which the 
+   user will be forced to change the password
+-- Warn: Number of days before the password expiration that the user is warned to 
+   change the password
+-- Inactive: The number of days after password expires that the account is disabled
+-- Expire: Days since Jan 11970 before the account is disabled
+
+---------------------------Creating Users---------------------------------------
+
+-- Creates a user with the username 'drew1'
+
+sudo useradd -m -d /home/drew1 -s /bin/bash -c "the drew1 user" -U drew1
+
+-m: creates the user's home directory using the defaults /home/username
+-d: specifies the user's home directory if the directory already exists
+-s: specifies the user's default shell (sh is the default). To view the 
+    shell options enter "cat /etc/shells"
+-c: extra information about the user, (ex. their full name)
+-U: creates a group with the same name as the user
+-g: specifies the user's primary group
+-G: specifies the user's supplementary group(s). can be a comma-delimited lis
+    with no spaces
+-k: use the specified directory as a template home directory
+
+-- To view a directory tree structure use the following command. tree needs to be
+   installed
+
+tree <directory>
+
+---------------------------User Modification---------------------------------------------
+
+-- When adding a user to a group be sure to use the append switch '-a' or all the previous
+   settings will be overwritten (which can be really bad if you are the only sudo user and
+   your changes cause you to lose sudo privileges)
+
+sudo usermod -a -G <new group> <username>
+
+-- Disabling a user account by locking it
+
+sudo usermod -L <username>
+
+-- Changing user password using the following command. You will be prompted
+   for the new user password after entering the command. (there is no feedback)
+
+sudo passwd 
+
+------------------------Delete user----------------------------------------
+
+-- User '-r' to remove the home directory and mail spool. Use 'f' to force deletion of
+   user files
+
+sudo userdel -r username
+
+-----------------------Copying a Directory--------------------------------
+
+sudo cp -R <source_folder> <destination_folder>
+
+-- view a directory tree structure (must have tree installed)
+
+tree <directory>
+
+#########################################################################
+Group Management
+##########################################################################
+
+-------------------------View Group Info---------------------------------
+
+View suplementary group info. It displays the following information......
+-- group_name
+-- Password: which is generally empty, but can store encrypted passwords
+-- Group ID (GID)
+-- Group List: a list of usernames for the users that belong to the group (only if the group
+   is the users supplementary group)
+
+sudo cat /etc/group
+
+-- To find a list of the groups a user belongs to. The first group listed is the 
+   primary group
+
+groups <username>
+
+-- If the user is the current login user just enter the command 'groups'
+
+----------------------------Creating a Group------------------------------
+
+-- create a group called apache with a group id of 9090
+
+sudo groupadd -g 9090 apache
+
+-- Modify a group
+
+sudo groupmod -n apache apache2
+
+-- Delete a group
+
+sudo 
+groupdel apache
+
+----------------------------Modifying the sudo privileges------------------------------
+
+-- To edit the privileges for the sudo users and groups. groups with sudo privileges
+   are indicated by a "%" sign in front of the group name. The file name should
+   be /etc/sudoers.tmp with th "tmp" extension indicating it is a temp file
+
+sudo visudo /etc/sudoers
+
+
+

@@ -1,0 +1,318 @@
+####################################################################################
+Environment settings
+####################################################################################
+
+-- check oracle environment variables
+
+env | grep ORA
+
+OR
+
+echo $ORACLE_HOME
+
+
+-- Sets the dbhome fora given ORACLE_SID using the configured settings in oratab file
+   returns an error code if the dbhome for the given ORACLE_SID is not in the oratab file 
+
+dbhome
+
+-- th check database global name in sqlplus
+
+select * from global_name
+
+-- The Oracle home directories are located in the oratab file. Check oracle home 
+   directory for each oracle environments
+
+cat /etc/oratab
+
+-- Check that an oracle home was registered to verify that an installation was atleast
+   partially succesful by looking at the inventory.xml file
+
+cat /u01/app/oraInventory/ContentsXML/inventory.xml
+
+#################################################################################
+Network
+##################################################################################
+
+-- check database network connection via the listener. This verifys that users
+   can connect through the listener 
+
+tnsping <SID>
+
+-- location of network files (tnsnames.ora, listener.ora, sqlplus.ora)
+
+cd $ORACLE_HOME/network/admin
+
+-- You can set the TNS_ADMIN environement variable to set the location of you network
+   files (i.e sqlnet.ora, tnsnames.ora). The following command sets the TNS_ADMIN 
+   default directory to the /etc directory (so the location is centralized). This
+   can also be entered into the .bash_profile of each user
+
+export TNS_ADMIN=/etc
+
+-- to change oracle SID use the ". oraenv" then enter the database environment
+   variable name for the given SID
+
+. oraenv
+
+---------------opening Oracle Net Configuration Assistant
+
+netca
+
+--------------Opening Oracle Net Manager
+
+netmgr
+
+#################################################################################
+Part of Database Creation
+#################################################################################
+
+--------------------------Creating the listener---------------------------
+
+-- Always set the oracle environment with (. oraenv) to the database of interest for 
+   each user under which you are creating a listener and configuring an oracle service
+  or network file
+
+-- use netca to create a listener
+
+-- user netmgr to register database service with th listener
+
+-- move the tnsnames.ora file to /etc/. to give it a centralized location so all users
+   have access
+
+----------------------Configure Listener for Remote connections--------------------------
+
+-- Enable bridged network
+
+-- Update the listener.ora file to 
+
+dbca -silent -generateScripts -gdbName tst2.world -templateName Test_Env_Template.dbt
+
+-------------------------Database Service Creation------------------------
+
+-- Check database services that are currently running by checking the pmon processess
+   that are currently running. There is only one pmon process for each database
+
+ps -ef | grep pmon
+
+-- add the database service
+
+srvctl add database -d tst2 -o /u01/app/oracle/product/11.2.0/dbhome_1 -n tst2 -m world
+
+-- enable the database service
+
+ srvctl enable database -d tst2
+
+-- start the database service
+
+srvctl start database -d tst2
+
+-- to stop database service
+
+srvctl stop database -d tst2
+
+-- Check status of databse service
+
+srvctl status database -d tst2
+
+######################################################################################
+Commands to check things within database
+######################################################################################
+
+-- Check to see if there are any active backups running
+
+SELECT * FROM v$backup WHERE status != 'NOT ACTIVE';
+
+-- Check if any database files need recovery
+
+SELECT * FROM v$recover_file;
+
+-- Check if RMAN catalog is installed on the database
+
+select * from rcver;
+
+#########################################################################################
+Editing commands in sqlplus
+##########################################################################################
+
+-- type "ed" into SQL prompt to edit the last command. type the correction into the afiedt.buf
+   buffer. Save and close the file then type "/" into the SQL command prompt and press enter
+
+-- You can re-enter a previous command with a different value 
+
+c/old_value/new_value
+
+####################################################################################
+Backups
+##################################################################################
+
+---------------------Physical backup of a tablespace---------------------------------
+
+STEP 1) Create a directory for backups
+
+mkdir /u04/oradata/backup/tst1
+
+STEP 2) prepare a tablespace for backup with the following command
+
+alter tablespace users begin backup;
+
+STEP 3) In the Linux command prompt enter the copy command (or use "host" key word
+        or "!" to enter the copy "cp" command in sql command prompt) to copy the 
+        database files that are being backed up to the backup location 
+
+cp -p /u05/oradata/tst1/users01.dbf /u04/oradata/backup/tst1/users01.dbf
+
+STEP 4) Remove the tablespace from backup mode
+
+alter tablespace users end backup;
+
+-----------------------Logical backup of (oracle datapump)----------------------------
+
+-- A logical backup is performed for the schema Disney in this example
+
+STEP 1) Create a directory on Oracle database for the dump file
+
+Create or replace directory DATA_PUMP_DIR as '/u04/oradata/backup/tst1';
+
+STEP 2) Create a parameter file
+
+dumpfile=expdp_disney_schema_tst1.dmp
+logfile=expdp_disney_schema_tst1.log
+schemas=(DISNEY)
+
+STEP 3) Use the expdp oracle export utility to perform an export. The Disney schema
+      is exported in this example. You can enter "/ as sysdba" to perform export as
+      as SYS user
+
+expdp "/ as sysdba" parfile=expdb_knowledge_schema_tst2.par
+
+-------------------Import
+
+STEP 4) Create an import parameter file (can use the export parameter file as a copy)
+        them modify the import parameter file as needed using a text editor
+
+cp expdp_disney_schema_tst1.par impdp_disney_schema_tst1.par
+
+STEP 5) Use the import utility to perform the import
+
+impdp parfile=impdp_disney_schema_tst1.par
+
+-------------------------Control file backup------------------------
+
+-- backup up the control file to trace (usually in background dump destination)
+
+ alter database backup controlfile to trace;
+
+
+##################################################################################
+Recovery
+###################################################################################
+
+-- to check for files that need recover (does not show anything if the file is 
+   missing)
+
+SELECT * FROM v$recover_file;
+
+###############################################################################
+RMAN
+#################################################################################
+
+-- Set default location of RMAN backups enter the following command in RMAN.
+   The "%U" is a file name format specifier
+
+CONFIGURE CHANNEL DEVICE TYPE DISK FORMAT'/u04/oradata/backup/tst2/RMAN/%U';
+
+-- Set control file autobackup location
+
+CONFIGURE CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO '/u04/oradata/backup/tst2/RMAN/%F';
+
+-- Configure pdb snapshot location 
+
+CONFIGURE SNAPSHOT CONTROLFILE NAME TO '/u04/oradata/backup/tst2/RMAN/snapcf_tst1.f';
+
+-- A summary of all database backups that occured
+
+LIST BACKUP OF DATABASE SUMMARY;
+
+-- A list all archive logs that were backup up 
+
+LIST BACKUP OF ARCHIVELOG ALL;
+
+-- A list of the controlfile backups
+
+LIST BACKUP OF CONTROLFILE;
+
+###############################################################################
+Automatic Diagnostic Repository Command Interpreter
+#################################################################################
+
+-- Type "adrci" into command line
+
+-- Use "show homes" command in the adrci command line to show a list of oracle homes
+   that have been configured
+
+-- To look into a particular database, set the oracle home to that database 
+
+set home diag/rdbms/tst1/tst1
+
+-- type "help" into adrci command line to see a list of commands
+
+#############################################################################
+Maintenance
+##############################################################################
+
+-- Need to clear up error report files and mail as to free up disk space
+   For 10g and lower look at background dump, user dump, core dump. For 11g+ look
+    at diag directories
+
+-- type "mailx" into linux command prompt as the root user to view mail reports
+   on errors that occured in the system. Enter the number the mail to view the 
+   contents. Type "q" to exit
+
+#################################################################################
+Location of Files
+################################################################################
+
+----------------------------Location of alert log file----------------------------
+
+/u01/app/oracle/diag/rdbms/<SID>/<SID>/trace/
+
+-- To check for errors
+
+grep ORA- alert_tst1.log
+
+----------------------Location of password and spfile--------------------------
+
+$ORACLE_HOME/dbs
+
+-- View password file format
+
+orapwd describe file=orapwtst2
+
+-- Force the conversion of password file from the legacy format to 12c to allow you 
+   to change the SYS password with the ALTER USER command
+
+orapwd file=orapwtst2 password=oracle123# force=y format=12 input_file=orapwtst2   
+
+##################################################################################
+Performance
+##################################################################################
+
+-- show how many chained and migrated rows each table has
+
+SELECT table_name, chain_cnt 
+FROM dba_tables 
+WHERE chain_cnt > 0;
+
+-- To see which rows are chained use the commands below. The ANALYZE command will
+   put the rows into the CHAINED_ROWS table which is created by the 
+   utlchain.sql script (in $ORACLE_HOME/rdbms/admin)
+
+ANALYZE TABLE tablename LIST CHAINED ROWS;
+
+SELECT * FROM chained_rows;
+
+-- the chained_row tables must already exist. The script, utlchain.sql, for creating
+   the table is located in /u01/app/oracle/product/12.2.0/dbhome_1/rdbms/admin
+
+

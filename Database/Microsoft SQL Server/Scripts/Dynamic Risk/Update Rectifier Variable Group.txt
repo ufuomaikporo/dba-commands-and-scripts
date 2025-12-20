@@ -1,0 +1,21 @@
+USE DRAS_IRASv6_ENG_CONFIG
+
+SELECT vg.Name AS VariableGroupName,
+v.GroupId,
+vc.Name AS VariableCategory, v.Name AS VariableName, dst.Name AS TableName, dsf.FieldName AS ColumnName, dt.Name AS DataType, tt.Name AS TableType 
+FROM dbo.Variable v
+INNER JOIN dbo.VariableGroup vg ON v.GroupId = vg.Id
+INNER JOIN dbo.VariableCategory vc ON v.CategoryId = vc.Id
+INNER JOIN dbo.VariableFieldXRef vfx ON v.Id = vfx.VariableId
+INNER JOIN dbo.DataSourceField dsf ON vfx.DataSourceFieldId = dsf.Id
+INNER JOIN dbo.DataSourceTable dst ON dsf.TableId = dst.Id
+INNER JOIN dbo.DataType dt ON dsf.DataTypeId = dt.Id
+INNER JOIN dbo.TableType tt ON dst.TableType = tt.Id
+WHERE dst.Name = 'Rectifier'
+
+
+SELECT * FROM dbo.VariableGroup vg WHERE Name IN ('Centerline')
+
+UPDATE variable 
+SET GroupId = (SELECT * FROM dbo.VariableGroup vg WHERE Name = 'Centerline')
+WHERE GroupId = (SELECT * FROM dbo.VariableGroup vg WHERE Name = 'Rectifier')

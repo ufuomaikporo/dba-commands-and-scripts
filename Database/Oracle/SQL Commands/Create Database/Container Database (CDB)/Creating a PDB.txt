@@ -1,0 +1,116 @@
+##########################################################################
+# CREATING A PDB FROM A SEED PDB
+#########################################################################
+
+--------------- 1) CONNECT TO DATABASE AS SYS WITH SYSDBA PRIVILEGE--------------
+
+
+-------------3) CHECK THAT PDB$SEED IS IN READ/WRITE MODE----------------
+
+COLUMN name FORMAT A20
+
+SELECT con_id, name, open_mode
+FROM v$pdbs;
+
+--ALTERNATIVELY YOU CAN USE....
+
+SHOW pdbs
+
+--------------- 4) SET PDB$SEED TO READ ONLY mode------------------------
+
+-- Set the pdbseed to read only mode if it is not already in read. You need the 
+   ALTER SESSION command to change the state of the pdb seed. FORCE causes a shutdown
+   abort and then reopens the pdb
+
+ALTER SESSION SET "_oracle_script" = TRUE;
+
+ALTER PLUGGABLE DATABASE PDB$SEED OPEN READ ONLY FORCE;
+
+------------------5) CREATE A PLUGGABLE DATABASE FROM PDBSEED-------------------------
+
+-- Create necessary directories befor issuing the command OR allow it to be 
+   automatically created by the oracle server. Need to add the creation
+   of a users tablespace in the CREATE command because the pdb seed does not have 
+   a users tablespace (all datafiles from the pdb seed are cloned)
+
+CREATE PLUGGABLE DATABASE pdb2 ADMIN USER pdb_adm IDENTIFIED BY Password1
+DEFAULT TABLESPACE users
+  DATAFILE 'C:\CDB2\oradata\pdb2\users01.dbf' SIZE 5M 
+  AUTOEXTEND ON NEXT 1M MAXSIZE 50M
+FILE_NAME_CONVERT=('C:\CDB2\oradata\pdbseed',
+                   'C:\CDB2\oradata\pdb2');
+
+---------------------------6) CHECK STATUS OF PDBS----------------------------------
+
+SHOW PDBS
+
+COLUMN pdb_name FORMAT A20
+
+SELECT pdb_name, status
+FROM dba_pdbs
+ORDER BY pdb_name;
+
+------------------------------Save pdb state--------------------------------
+
+-- The DBA_PDB_SAVED_STATES view displays information about the saved state of containers.
+
+COLUMN con_name FORMAT A20
+COLUMN instance_name FORMAT A20
+
+SELECT con_name, instance_name, state FROM dba_pdb_saved_states;
+
+-- You can save the state of a pdb so that it is always in the current state 
+   whenever the database is opened
+
+ALTER PLUGGABLE DATABASE pdb1 SAVE STATE;
+
+###########################################################
+# CLONING A LOCAL PDB
+###########################################################
+
+-----------------------SET THE PDB BEING CLONED TO READ ONLY MODE-----------------
+
+ALTER PLUGGABLE DATABASE pdb1 OPEN READ ONLY;
+--OR
+ALTER PLUGGABLE DATABASE pdb1 OPEN READ ONLY FORCE;
+
+---------------------ISSUE CREATE PLUGGABLE DATABASE COMMAND----------------------
+
+-- No need to add a users tablespace in the CREATE command if the pdb being cloned
+already has a user tablespace
+
+CREATE PLUGGABLE DATABASE pdb3 FROM pdb1
+     FILE_NAME_CONVERT=('C:\CDB2\oradata\pdb1',
+                       'C:\CDB2\oradata\pdb3');
+
+NOTE*: SERVICE_NAME_CONVERT is an option in the CREATE PLUGGABLE DATABASE command
+but is not needed if the target pdb and clone have different names
+
+SERVICE_NAME_CONVERT=('pdb1','clone_pdb1', 'pdb2', 'clone_pdb2', 'pdb3', 'clone_pdb3')
+
+------------------Change the pdb being cloned back to read write mode--------------
+
+ALTER PLUGGABLE DATABASE pdb1 OPEN READ WRITE FORCE;
+
+-------------------------- CHECK STATUS OF PDBS-----------------------------------
+
+SHOW PDBS
+
+OR
+
+COLUMN pdb_name FORMAT A20
+
+SELECT pdb_name, status
+FROM dba_pdbs
+ORDER BY pdb_name;
+
+##########################################################
+# DELETING A PLUGGABLE DATABASE
+###########################################################
+
+--CLOSE THE PLUGGABLE DATABASE THAT NEEDS TO BE DROPPED THEN ENTER DROP COMMAND
+
+ALTER PLUGGABLE DATABASE pdb3 CLOSE;
+
+DROP PLUGGABLE DATABASE pdb3
+  INCLUDING DATAFILES;

@@ -1,0 +1,436 @@
+https://oracle-base.com/articles/12c/multitenant-rman-backup-recovery-cdb-and-pdb-12cr1
+
+###########################################################################################
+PDB SNAPSHOTS
+##########################################################################################
+
+-- a pdb snapshot is a copy of a pdb at a specific point in time
+-- MAX_PDB_SNAPSHOTS database property sets the maximum number of pdb snapshots for each pdb
+   the default and allowed maximum 8 (can only set a value less than or equal 8)
+-- Specify the MAX_PDB_SNAPSHOTS in the ALTER PLUGGABLE DATABASE or CREATE PLUGGABLE DATABASE
+   commandS
+-- Use CDB_PROPERTIES view to view current setting off MAX_PDB_SNAPSHOTS
+-- the snapshot after the maximum number of snapshots overwrites the earliest snapshot
+-- snapshots extend the recovery of a pdb far beyond the flashback retention period
+
+------------------------------Creating PDB Snapshots---------------------------------
+
+STEP 1) Enable PDB for PDB snapshots (This is already enabled by default) using the 
+      CREATE PLUGGABLE DATABASE or ALTER PLUGGABLE DATABASE commands
+
+-- Manual mode means you have to issue a command to perform the snapshot
+
+CREATE PLUGGABLE DATABASE pdb1 SNAPSHOT MODE MANUAL
+
+OR
+
+-- Automatic mode can be specified by specifying an interval to automatically take 
+  snapshots. Must be in either MINUTES or HOURS. must be less than 3000 MINUTES and less
+  than 2000 HOURS
+
+ALTER PLUGGABLE DATABASE pdb1 SNAP 24 HOURS
+
+-- To DISABLE snapshot creation
+
+ALTER PLUGGABLE DATABASE pdb1 SNAPSHOT MODE NONE;
+
+STEP 2) To Create one or more manual snapshots by repeating the following command. 
+       each snapshot must have a unique name
+
+ALTER PLUGGABLE DATABASE pdb1 SNAPSHOT pdb1_first_snap;
+
+---------------------Creating pdbs from a snapshot------------------------------------------
+
+-- You can use a pdb snapshot to create a pdb to query the historical data in the pdb
+    snapshot by the USING SNAPSHOT clause can specify a snapshot name, SCN at which the 
+    snapshot was created, or time the snapshot was created 
+
+CREATE PLUGGABLE DATABASE pdb1_day_1 FROM pdb1
+USING SNAPSHOT pdb1_first_snap;
+   
+----------------------------DROPPING a pdb snapshot----------------------------------
+
+-- snapshots are dropped automatically when the MAX_PDB_SNAPSHOT limit is reached, but you
+   can drop a snapshot manually using the following command
+
+ALTER PLUGGABLE DATABASE pdb1 DROP SNAPSHOT pdb1_first_snap;
+
+-------------------------Flashing Back pdbs Using a snapshot-----------------------------
+
+STEP 1) Close the pdb that needs to be recovered
+
+STEP 2) CREATE a new pdb using a snapshot from before the point of the occurence of
+       the user error
+
+STEP 3) Drop the pdb that needs to be recovered and rename the new pdb created from the 
+      snapshot to the name of the dropped pdb (the one that is being recovered)
+
+STEP 4) open the newly created pdb and create another snapshot
+
+#########################################################################################
+DATABASE DUPLICATION
+#########################################################################################
+
+-- a duplicate database is a copy of a database at a specific point in time
+-- can be created on the same host as the original or on a different host
+-- can contain identical content or a subset of content in the source
+-- Can use RMAN or Enterprise Manager
+-- most of the work is performed by auxiliary channels (on destinination host) for 
+   backup-based duplication
+-- destination database must have access to target backups for backup-based duplication
+-- Duplication types are active duplication and backup-based duplication which can be done 
+   using either the push method or the pull method
+-- most of the work is done by the target/source channels for active duplication (pushing)
+   if there are more target channels than auxiliary channel
+-- PUSH process (target does more work) based on image copies, PULL process (auxiliary does
+   more work) based on backup sets
+
+-- database instance on the duplicate host is called the auxiliary instance
+
+Uses for duplicate database
+
+-- To test backup and recovery procedures
+-- to recover objects by creating an export from the duplicate database then importing
+   the objects from the export into the production database
+
+-------------------------Active Duplication (with Push Method)-----------------------------
+
+-- Can use Enterprise Manger or RMAN with the FROM ACTIVE DATABASE clause in the 
+   DUPLICATE command
+-- pre-existing backups are not needed. Online image copies are created by the source 
+  database (in open or mount mode) and transmitted via Oracle Net
+-- source/target database can be open or mounted
+
+----------------------------Active database duplication-----------------------------------------
+
+-- target database must be in archivelog mode and in either open or mount mode
+-- auxiliary instance should be in nomount mode (using the pfile)
+-- can't use SPFILE, or DB_FILE_NAME_CONVERT option in the DUPLICTE command
+
+STEP 1) Create the auxiliary instance
+
+ORADIM -NEW -SID CLONEDB -STARTMODE auto -pfile 'C:\app\Oracle\admin\CLONEDB\initclonedb.ora' -SRVCSTART system -SHUTMODE immediate
+
+STEP 2) Create the password file (Optional if windows authentication is configured)
+       The SYS password for the password file must match the SYS password in for the source database 
+
+ORAPWD file=PWDCLONEDB ENTRIES=15 PASSWORD=Passw0rd$
+
+STEP 3) Create Pfile
+
+DB_NAME=CLONEDB
+REMOTE_LOGIN_PASSWORDFILE=EXCLUSIVE
+
+
+STEP 4) Create an Oracle net service for the duplicate database (in Net manager or in tnsnames.ora
+    files. Add the Net service to the listener it is configured for in Net Manager  
+
+STEP 5) Start the instance in nomount mode using the pfile
+
+STEP 6) connect to the source/target database and auxiliary instance in RMAN
+        The source database must be in mount or open mode
+
+RMAN TARGET 'sys/Passw0rd$@txpdb' AUXILIARY 'sys/Passw0rd$@clonedb'
+
+STEP 7) Issue the duplicate command. Use the SET NEWNAME command to rename all datafiles
+   and tempfiles. Use the LOGFILE option in the DUPLICATE command to create logfiles
+   
+
+
+
+--------------------------Pull Method------------------------------------------------
+
+-- Requires TNS connections to BOTH the target and auxiliary instances
+
+Pull method is used if you specify the following in the RMAN DUPLICATE command 
+
+-- USING BACKUPSET
+-- SECTION SIZE divides datafiles into subsections that are restored in parallel across 
+   multiple channels on the auxiliary database (allocate more auxiliary channels for 
+    effective use)
+-- SET ENCRYPTION encrypts backups sent to the destination database
+-- USING COMPRESSED BACKUPSET transfers the files as compressed backup sets, reducing the 
+   size of backups that are transported
+
+-------------------------------Backup-base Duplication--------------------------------
+
+-- Can be connected to the target, or the recovery catalog or neither. If connected to 
+   one or the other, RMAN uses the connection to obtain metadata about backups. The 
+   destination database must have access to the RMAN backups
+-- When you duplicate a database without connect to either the target database or the RMAN
+   recovery catalog a disk backup location containing all backups or copies for duplication
+   must be available to the destination host 
+-- The destination database MUST have access to the backup location of the target database
+
+
+--------------------------Create Backup-based Duplicate Database------------------------
+
+-- Can use Enterprise Manager wizard or follow perform it manually using the steps below
+
+STEP 1) Create an Oracle password file for local and remote connections by high
+        level users/administrators (such as SYS) to the auxiliary database
+
+ORAPWD file=location\file_name ENTRIES=15 PASSWORD=your_password_for_sys
+
+STEP 2) Establish Oracle Net connectivity to the auxiliary instance 
+
+-- Open Net Manager (or tnsnames.ora file) and add a new Net Service name for the database. 
+   Then add the Net Service name to the default listener (using Net manager)
+   Then reload the listener so the database service name appears in the lister services
+
+STEP 3) Create all the necessary directories for all the data, redo log and control files
+
+-- try to use the same directory structure
+
+STEP 3) Create an initialization parameter file for the auxiliary instance
+
+-- the initializaion parameter file (pfile) must reside on the same host as the RMAN 
+   client that is used to execute the DUPLICATE command
+-- all specifed paths on the pfile must exist and be accessible on the destination host
+
+Include some or all of the following parameters based on the situation. DB_NAME
+must be included
+
+ -- DB_NAME: must be different if the duplicate database is in the same Oracle home 
+    and on the same server as the target database. The same DB_NAME 
+    should be used in the DUPLICATE command
+-- CONTROL_FILES parameter is only required if SET NEWNAME option or OMF is not used
+-- ENABLE_PLUGGABLE_DATABASE=TRUE only required if you're duplicating a CDB
+
+STEP 4) CREATE a new Windows service and instance with the ORADIM
+
+-- fs the password fails you can use Database Configuration Assistant or the command
+ SC DELETE {service_name} to delete the 3 oracle services that were created 
+ (oracleserviceSID, oraclevsswriterSID, oraclejobschedulerSID) and rerun the command
+
+ORADIM -NEW -SID CLONEDB -STARTMODE auto -pfile 'location\file_name' -SRVCSTART system -SHUTMODE immediate
+
+STEP 4) Start the auxiliary instance in NOMOUNT mode
+
+-- All directories specified in the pfile must be created manually before using it
+   to start the instance
+
+SET ORACLE_SID=CLONEDB
+SQLPLUS / AS SYSDBA
+
+STARTUP NOMOUNT PFILE = 'location\pfile_name'
+
+RMAN automatically creates a default server parameter file for the auxiliary instance if
+
+-- Duplication does not involve a standby database
+-- spfiles are not duplicated AND......
+-- The auxiliary instance was not started with a server parameter file
+
+-- If the conditions above are not met then create  an spfile using the following command.
+    you can CREATE spfile before or after starting the instance
+
+CREATE SPFILE FROM PFILE='location\pfile_name';
+
+STEP 5) Mount or OPEN the target database
+
+STEP 6) Ensure that backups and archived redo log files are available either on local
+        or network storage of duplicate host (Best to take a backup 
+        if you can at this point so the duplicate is current)
+
+-- backups must be accessible to the duplicate host and can be a combination of full and 
+   incremental backups
+-- archived redo logs are needed to recover the duplicate database and must be accessible
+   to duplicate host. Can be backups on media manager, image copies, or actual archived 
+   redo logs 
+
+STEP 7) Allocate auxiliary channels if needed
+
+-- auxiliary channels specify a connection between RMAN and the auxiliary database. Need
+   to manually specify atleast one auxiliary channel in the run block if you do not have
+   automatic channels configured
+-- if backups are on disk, you can allocate more than channel to speed up duplication
+-- if backups are on tape, specify the number of channels that correspond to the number
+   of devices available
+
+$RMAN TARGET sys/oracle@target AUXILIARY sys/oracle@auxdb
+
+OR
+
+$SET ORACLE_SID=target
+$rman target / AUXILIARY sys/oracle@auxdb
+
+RUN {
+ALLOCATE AUXILIARY CHANNEL aux1 DEVICE TYPE DISK;
+ALLOCATE AUXILIARY CHANNEL aux1 DEVICE TYPE DISK;
+..... 
+DUPLICATE TARGET DATABASE to auxdb;....
+
+STEP 8) Execute the DUPLICATE command
+
+----------------------------Renaming files with SET NEWNAME command-------------------------------------
+
+-- Must be issued within a run block. Order of precedence is DATAFILE and TEMPFILE, then
+   TABLESPACE, and finally DATABASE if all variations of the command are issued within 
+   the same run block and a file is effected by more than one of the commands
+-- Can be used to specify the new location of files
+
+SET NEWNAME FOR DATAFILE|TEMPFILE|TABLESPACE|DATABASE TO {NEW|'format_specifier'};
+
+RUN {
+SET NEWNAME FOR DATABASE TO 'C:\app\oracle\oradata\dupldb\%b';
+DUPLICATE TARGET DATABASE TO dupldb
+LOGFILE 
+GROUP 1 ('C:\app\oracle\oradata\dupldb\redo01a.log', 
+         'C:\app\oracle\oradata\dupldb\redo01b.log') SIZE 50M REUSE,
+GROUP 2 ('C:\app\oracle\oradata\dupldb\redo02a.log', 
+         'C:\app\oracle\oradata\dupldb\redo02b.log') SIZE 50M REUSE,
+GROUP 3 ('C:\app\oracle\oradata\dupldb\redo03a.log', 
+         'C:\app\oracle\oradata\dupldb\redo03b.log') SIZE 50M REUSE;
+}
+
+RUN { 
+SET NEWNAME FOR DATAFILE 1 TO 'C:\oradata1\system01.dbf';
+SET NEWNAME FOR DATAFILE 2 TO 'C:\oradata1\sysaux01.dbf';
+SET NEWNAME FOR DATAFILE 3 TO 'C:\oradata1\undotbs01.dbf';
+SET NEWNAME FOR DATAFILE 4 TO 'C:\oradata1\users01.dbf';
+SET NEWNAME FOR TABLESPACE exam_tbs TO 'C:\oradata5\%b';
+DUPLICATE TARGET DATABASE TO dupldb ;
+}
+
+-- Use atleast one of the format specifiers for the FOR TABLESPACE and FOR DATABASE options
+   to avoid name collisions
+ 
+Format specifiers 
+
+-- %b specifies the file name without the directory path
+-- %f specifies the absolute file number of the datafile for which the new name is generated
+-- %I specifies the DBID
+-- %N specifies the tablespace name
+-- %U specifies ta system -generated filename of the format: data-D-%d_id-%I_TS-%N_FNO-%f
+
+-----------------------------Other way of renaming files------------------------
+
+-- If control file locations are not explicitly specified then oracle server creates
+   Oracle-managed control files in a default location. Alternatively you can use 
+   SPFILE PARAMETER_VALUE_CONVERT in a similar way to DB_FILE_CONVERT to rename 
+   location of control files as an option in the DUPLICATE command. You can also 
+   specify the control files in the auxiliary instance pfile as follows
+
+CONTROL_FILE='C:\app\oracle\oradata\aux\control01.ctl',
+             'C:\app\oracle\oradata\aux\control02.ctl',
+             'C:\app\oracle\oradata\aux\control03.ctl'
+
+-- DB_FILE_NAME_CONVERT specifies the directory renaming by stating the pattern for the 
+   data files of the target database followed by the pattern for the auxiliary 
+   database (in a pair). This parameter can be specifed as an option in the
+   DUPLICATE DATABASE command  
+
+DB_FILE_NAME_CONVERT=('C:\CDB2\ORADATA', 'C:\app\Oracle\oradata\clonedb',
+    'C:\CDB2\ORADATA\PDBSEED', 'C:\app\Oracle\oradata\clonedb\pdbseed',
+    'C:\CDB2\ORADATA\PDB1', 'C:\app\Oracle\oradata\clonedb\pdb1',
+    'C:\CDB2\ORADATA\PDB2', 'C:\app\Oracle\oradata\clonedb\pdb2',
+    'C:\CDB2\ORADATA\PDB3', 'C:\app\Oracle\oradata\clonedb\pdb3')
+
+-- The LOG_FILE_NAME_CONVERT parameter is similar to the DB_FILE_NAME_CONVERT parameter
+   but for redo log files. It cannot be specified in the DUPLICATE command, but can be 
+   specified in the pfile. Does not work in Oracle 12c
+
+LOG_FILE_NAME_CONVERT= ('C:\app\oracle\oradata\orcl',
+                     'C:\app\oracle\oradata\aux')
+
+--------------- More alternatives to renaming the files-----------------------------
+
+-- Use the LOGFILE clause of the DUPLICATE command explicitly name each logfile in 
+   each log group
+
+LOGFILE
+GROUP 1 (‘C:\app\oracle\oradata\CloneDB\REDO01A.log’, 
+         ‘C:\app\oracle\recovery_area\CloneDB\REDO01B.log’) size 100m reuse, 
+GROUP 2 (‘C:\app\oracle\oradata\CloneDB\REDO02A.log’, 
+         ‘C:\app\oracle\recovery_area\CloneDB\REDO02B.log’) size 100m reuse; 
+
+-- PARAMETER_VALUE_CONVERT allows is similar to DB_FILE_NAME_CONVERT but for all
+   database files. (does not work in 12c)
+-- Set Oracle Managed Files initialization parameters in pfile: 
+   DB_CREATE_FILE_DEST (default location for all data files, control files and 
+   logfiles if not specified by other more specific commands and parameters), 
+   DB_CREATE_ONLINE_DEST_n (to multiplex control and log files), 
+   and or DB_RECOVERY_FILE_DEST (to specify location of FRA)
+
+------------------------DUPLICATE command-------------------------------------
+
+Some options within the command
+
+-- SKIP READONLY : excludes read-only tablespaces
+-- SKIP TABLESPACE: use to exclude tablespace from the target, cannot exclude the SYSTEM
+   tablespace or tablespaces containing undo or rollback segments
+-- TABLESPACE: use to include tablespaces from the target database
+-- NOFILENAMECHECK: MUST use this if you create a duplicate database on a host with the 
+   same disk disk configuration, directory structure, and file names as the database host
+   otherwise an error will be generated. prevents RMAN for checking whether the target 
+   database datefiles with the same names as duplicate data files are in use
+-- OPEN RESITRICTED: Use to enable RESTRICTED SESSION after the database is opened
+-- NOOPEN: Use to finsish with the duplicate database in MOUNT mode. Used before
+   modifying block change tracking, configuring fast incremental backups or flashback 
+   database settings, moving the location of the database (i.e. to ASM) or upgrading a 
+   database
+-- NOREDO: used to suppress redo during recovery. Must be used when performing a targetless
+   DUPLICATE (not connected to target) with a target database that was backed up in 
+   NOARCHIVELOG mode or when the archived redo log files are not available (for example 
+   when duplicating an ARCHIVELOG mode database to a point in time when it was in 
+   NOARCHIVELOG mode)
+-- UNDO TABLESPACE: If the target database is not open and a recovery catalog is not being 
+  used during partial database duplication, then this must be used to provide the names of
+  the undo segment tablespaces
+
+-----------------------Duplicating Selected PDBS in a CDB-------------------------------
+
+-- Need to set ENABLE_PLUGGABLE_DATABASE=TRUE in pfile to duplicate one or more pdbs
+-- When you duplicate one pdb, RMAN also duplicated the CDB root and pdb seed
+
+-- To duplicate one pdb
+
+DUPLICATE DATABASE TO cdb1 PLUGGABLE DATABASE pdb1;
+
+-- To duplicate several pluggable databases
+
+DUPLICATE DATABASE TO cdb1 PLUGGABLE DATABASE pdb1, pdb3;
+
+-- To duplicate all pdbs except one
+
+DUPLICATE DATABASE TO cdb1 SKIP PLUGGABLE DATABASE pdb3;
+
+-- To duplicate a pdb and tablespaces from other pdbs 
+
+DUPLICATE DATABASE TO cdb1 PLUGGABLE DATABASE pdb1 TABLESPACE pdb2:users;
+
+-----------------Cloning active PDB into an existing open CDB------------------------------
+
+-- The password for the target and auxiliary connections must be the same when using active
+   duplication
+-- define location for storing foreign archive log files by setting the initialization
+   parameter REMOTE_RECOVERY_FILE_DEST
+-- RMAN should be connected to the CDB root of the target and auxiliary instance
+-- the destination CDB needs to be opened in read/write mode and the target pdb is opened
+-- Set the COMPATIBLE initialization parameter to 18.1 or higher
+-- Can clone only one pdb at a time
+
+LIMITATIONS
+
+-- Non-CDB to PDB duplication is not supported
+-- encryption is not supported for PDB cloning
+-- SPFILE, NO STANDBY, FARSYNC STANDBY, and LOG_FILE_CONVERT keywords are not supported
+
+STEP 1) Set REMOTE_RECOVERY_FILE_DEST initialization parameter in destination database
+
+ALTER SYSTEM SET REMOTE_RECOVERY_FILE_DEST='location';
+
+STEP 2) Connect to the target/source and destination
+
+RMAN TARGET / AUXILIARY 'sys/oracle@destdb AS SYSDBA'
+
+STEP 3) Start duplication (the duplicate pdb in the destination database has the same name 
+        as the target)
+
+DUPLICATE PLUGGABLE DATABASE pdb1 TO cdb2 FROM ACTIVE DATABASE;
+
+-- To rename the duplicate pdb to a different name (pdb2) in the destination (cdb2)
+   target database is CDB AND PDB are cdb1 and pdb1
+
+DUPLICATE PLUGGABLE DATABASE pdb1 AS pdb2 TO cdb2 FROM ACTIVE DATABASE
+DB_FILE_NAME_CONVERT ('cdb1', 'cdb2')

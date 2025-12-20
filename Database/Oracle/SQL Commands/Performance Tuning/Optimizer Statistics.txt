@@ -1,0 +1,415 @@
+###############################################################################
+Setting Preferences
+###############################################################################
+
+-- Use the subprogram SET_{}_PREFS of the DBMS_STATS stored procedure to change
+   the parameters of the other DBMS_STATS subprograms. Changing the DATABASE or
+   SCHEMA stats overrides the settings below it (TABLE and or SCHEMA)
+-- GLOBAL settings apply to all objects (Tables and indexes)
+-- DATABASE settings apply to all tables. Overides all SCHEMA and TABLE settings 
+   within the database except for SYS and SYSTEM schema and tables
+-- SCHEMA settings apply to a tables within the specified schema. Overrides TABLE settings
+-- TABLE settings apply to a specific table within a specific schema
+
+EXEC DBMS_STAT.SET_[GLOBAL|DATABASE|SCHEMA|TABLE]_PREFS('parameter')
+
+-- This preference makes it such that if 5 percent of the rows in a table is changed
+   the statistics for the table will be considered stale if it is not updated. This
+   will in turn result in dynamic sampling during the creation of execution plans
+
+EXEC DBMS_STATS.SET_GLOBAL_PREFS('stale_percent', 5);
+
+-- Force statistics gathering of indexes associated with the tables with the following
+   command
+
+EXEC DBMS_STATS.SET_SCHEMA_PREFS('PERFTUNE', 'cascade', 'true');
+
+------------------------ To View the current settings for a parameter--------------
+
+-- For GLOBAL preferences use the following
+
+SET SERVEROUTPUT ON
+EXEC DBMS_OUTPUT.PUT_LINE(DBMS_STATS.GET_PREFS('stale_percent'))
+
+OR
+
+SELECT DBMS_STATS.GET_PREFS('estimate_percent') FROM Dual;
+
+OR
+
+-- For Database, Schema or Table preference settings through the 
+   DBA_TAB_STAT_PREFS data dictionary view. Each time the SET_DATABASE_PREFS, 
+   SET_SCHEMA_PREFS, or SET_TABLE_PREFS is used, a new row is added to the 
+   DBA_TAB_STAT_PREFS view
+
+SET PAGES 999 LINES 120
+COL owner FORMAT A15
+COL table_name FORMAT A20
+COL preference_value FORMAT A16
+COL preference_name FORMAT A20
+
+SELECT * FROM dba_tab_stat_prefs
+WHERE owner <> 'SYSTEM';
+
+----------------------Reset Preferences to Factory Defaults---------------------
+
+-- Reset Global preferences to factory defaults
+
+EXEC DBMS_STATS.RESET_GLOBAL_PREF_DEFAULTS;
+
+-- Reset the stats history retention to the factory default 
+
+EXEC DBMS_STATS.ALTER_STATS_HISTORY_RETENTION(null);
+
+----------------------Deleteing a Preference setting-------------------------------
+
+-- Deleting a preference setting at the database, schema or table level removes the
+   setting from the DBA_TAB_STAT_PREFS table. The global settings are used going 
+   going forward after a preference is deleted from the DBA_TAB_STAT_PREFS table
+
+DBMS_STATS.DELETE_TABLE_PREFS ('DJONES','JOB','CASCADE');
+
+####################################################################################
+# VIEW GATHERED STATISTICS
+###################################################################################
+
+----------------------View gathered statistics------------------------------------
+
+-- gathered statistics are stored in the DBA_[TAB|COL|IND]_STATISTICS, 
+   ALL_[TAB|COL|IND]_STATISTICS and USER_[TAB|COL|IND]_STATISTICS views
+
+-- table statistics are stored in the [DBA|ALL|USER]_TAB_STATISTICS dictionary view
+
+-- column statistics are stored in the [DBA|ALL|USER]_COL_STATISTICS dictionary view
+
+-- index statistics are stored in the [DBA|ALL|USER]_IND_STATISTICS dictionary view
+
+-- last_analyzed: is the date when the statistical analysis occurred
+-- num_rows: is the number of rows in the table when analyzed
+-- blocks: is the number of used blocks in the object segment
+-- empty_blocks: is the number of empty blocks in the object segment
+-- avg_space: is the average available free space in the object
+-- chain_cnt: is the number of chained and migrated rows in the table
+-- avg_row_len: the average length of rows in the table, including oracle overhead
+-- sample_size: is sample size used in the analysis
+
+-- num_distict: the total number of unique values in the column
+-- low_value: the lowest value in the column (stored in binary format)
+-- high_value: the highest value in the column (stored in binary format)
+-- num_nulls: the number of rows with null values in a column
+
+-- blevel: levels (excluding the root) in the index
+-- leaf_blocks: number of leaf blocks in the index. Leaf blocks connect RowIDs to 
+   data rows
+-- distinct_keys: number of unique keys in the index (equal to number of rows in a 
+   unique index)
+-- clustering_factor: order of index compared to the actual table. If close to the
+   # of blocks in the table, clustering is good. If close to the # of rows in the 
+   table, then the clustering is bad
+--num_rows: number of rows in the index
+
+----------------------------View Table Statistics--------------------------
+
+-- The following query shows the current/published table statistics that will be 
+   used for generating execution plans
+
+COL owner FORMAT A15
+COL table_name FORMAT A15
+
+SELECT owner, 
+       table_name,
+       num_rows, 
+       blocks,
+       TO_CHAR(last_analyzed, 'YYYY-MM-DD:HH:MI:SS') AS created
+FROM dba_tab_statistics
+WHERE owner = 'PERFTUNE'
+AND table_name = 'ORDERS';
+
+-----------------------------View Column Statistics----------------------
+COL table_name FORMAT A15
+COL column_name FORMAT A15
+COL low_value FORMAT A20
+COL high_value FORMAT A20
+
+SELECT Table_Name, Column_Name, Last_Analyzed, Num_Distinct,
+Low_Value, High_Value, Num_Nulls, Sample_Size
+FROM DBA_Tab_Col_Statistics
+WHERE Owner = 'PERFTUNE'
+AND Table_Name = 'DETAILS'
+
+----------------------------View Index Statistics--------------------------
+
+-- This query returns 1 row for each index on the DETAILS table
+
+COL table_name FORMAT A20
+COL index_name FORMAT A20
+
+SELECT Table_Name, Index_Name, Last_Analyzed, BLevel,
+Leaf_Blocks, Distinct_Keys, Clustering_Factor,
+Num_Rows, Sample_Size
+FROM dba_ind_statistics
+WHERE Owner = 'PERFTUNE'
+AND Table_Name = 'ORDERS';
+
+####################################################################################
+# GATHERING STATISTICS
+###################################################################################
+
+---------------------------Gathering Operating System Statistics-------------------
+
+-- Gathering system stats gathering adds overhead
+
+-- Gather BASIC Operating system statistics (CPU & I/O) using the following command. 
+   The gathering_mode defaults to NOWORKLOAD
+
+EXEC DBMS_STATS.GATHER_SYSTEM_STATS;
+
+-- Gathering ADVANCED operating system statistics (must be done manually either by 
+   specifying an interval or specifying start and stop). If statistics gathering is
+   started manually it must be stopped manually. The following example gathers 
+   operating system statistics manually
+
+EXEC DBMS_STATS.GATHER_SYSTEM_STATS(gathering_mode=>'START');
+EXEC DBMS_STATS.GATHER_SYSTEM_STATS(gathering_mode=>'STOP');
+
+OR
+
+EXEC DBMS_STATS.GATHER_SYSTEM_STATS('START');
+EXEC DBMS_STATS.GATHER_SYSTEM_STATS('STOP');
+
+OR
+
+-- Gather advanced Stats for the next 5 minutes
+
+EXEC DBMS_STATS.GATHER_SYSTEM_STATS(gathering_mode=>'INTERVAL', interval=>5);
+
+---------------------------Gathering Fixed Object Statisitics----------------
+
+-- Gathering fixed_objects statistics with all the default parameters
+-- Fixed object stats must be manually collected to be valid. Typically, these 
+   statistics don’t change that much, so collect them when installing or creating a
+   new database, or after any major change to the database or server
+-- Data for Fixed Object Statistics is contained in the X$ views
+
+EXEC DBMS_STATS.GATHER_FIXED_OBJECTS_STATS;
+
+-----------Gathering Data Dictionary & Object (table/index) Statistics-------------
+
+-- This is done automatically by an automated job that is created when the database
+   is created (can be disabled)
+
+-- By default, gathers statistics for objects that are stale or missing (stats are
+   stale when >10% rows in a table have changed) 
+
+-- Gathering Data Dictionary Statistics with all the default parameters. Always 
+   gathers statistics on objects owned by either the SYS or SYSTEM users. Optionally 
+   gathers statistics on RDBMS owned objects listed in the DBA_REGISTRY view
+
+EXEC DBMS_STATS.GATHER_DICTIONARY_STATS;
+
+-- Gather entire database statistics
+
+EXEC DBMS_STATS.GATHER_DATABASE_STATS
+
+-- Gather Schema Stats. Gather statistics on all objects in schema
+
+EXEC DBMS_STATS.GATHER_SCHEMA_STATS('SchemaName');
+
+-- Gather table statistics
+
+EXEC DBMS_STATS.GATHER_TABLE_STATS ('Schemaname', 'TableName')
+
+-----------------------------  UPDATE Statistics -----------------------------
+
+EXECUTE DBMS_UTILITY.ANALYZE_SCHEMA ('owner','compute');
+
+#################################################################################
+Publishing Statistics
+#################################################################################
+
+-- statistics are published as soon as they are gathered by default. This can cause
+   problems if table and index stats don't match or if tables in joins are using 
+   different statistics. In these cases statistics gathering can lead to poor
+   execution plans, making things worst
+-- You can gather statistics and test them first before publishing them to avoid
+   these problems
+-- Statistics publishing can be turned off for a table, schema, or database. 
+
+------------------------Turn off automatic publishing------------------------------
+
+-- Turning off publishing at the database level is not advised since you can 
+   only turn it back on at the schema level
+-- Turn off automatic publishing to prevent gathered stats from being used for
+   a specific table 'NAMES' in the 'DJONES' schema. 
+
+EXEC DBMS_STATS.SET_TABLE_PREFS('DJONES','NAMES','PUBLISH','FALSE');
+
+-- Turn off automatic publishing to prevent gathered statistics from being used for
+   an entire schema (PERFTUNE schema)
+
+EXEC DBMS_STATS.SET_SCHEMA_PREFS('PERFTUNE', 'PUBLISH', 'FALSE');
+
+--------------------------Publish pending statistics------------------------------
+
+-- specify null for table name to publish statistics for all tables in a schema
+
+DBMS_STATS.PUBLISH_PENDING_STATS (
+   	ownname         IN  VARCHAR2 DEFAULT USER,
+   	tabname         IN  VARCHAR2,
+   	no_invalidate       BOOLEAN DEFAULT to_no_invalidate_type(get_param('NO_INVALIDATE')),
+   	force           IN  BOOLEAN DEFAULT FALSE);
+
+-- Either specify the parameter and value with the '=>' sign or specify the 
+   parameters in the correct order without skipping a parameters that are in between
+
+-- Publish pending stats for NAMES table with the following
+
+DBMS_STATS.PUBLISH_PENDING_STATS (tabname=>'NAMES');
+
+-- Publish pending stats for all objects in the DJONES schema by pass the argument 
+   'null' into the procedure call
+
+DBMS_STATS.PUBLISH_PENDING_STATS ('DJONES', null);
+
+-- Generate the commands to publish the statistics for all non-oracle
+   maintained users in the database
+
+SELECT 'EXEC DBMS_STATS.PUBLISH_PENDING_STATS ('''|| username || ''', null)' 
+FROM dba_users
+WHERE oracle_maintained = 'N';
+
+-----------------------Test pending statistics------------------------------
+
+-- To test using pending statistics on any tables in your session with pending
+  statistics set the parameter OPTIMIZER_USE_PENDING_STATISTICS = TRUE at the session level.
+  This will cause unpublished parameters to be used by the optimizer
+
+ALTER SESSION SET OPTIMIZER_USE_PENDING_STATISTICS = TRUE
+
+----------------------Delete Pending Statistics----------------------------------
+
+-- Syntax 
+
+DBMS_STATS.DELETE_PENDING_STATS (
+    ownname    IN  VARCHAR2  DEFAULT USER,
+    tabname    IN  VARCHAR2);
+
+-- Example of usage
+
+DBMS_STATS.DELETE_PENDING_STATS (tabname=>'NAMES');
+
+-- Deletes all pending statistics for DJONES
+
+DBMS_STATS.DELETE_PENDING_STATS ('DJONES', null);
+
+##############################################################################
+Statistics History
+##############################################################################
+
+-- Statistics history is maintained automatically. Current statistics are added to 
+   to the statistics history when published. 
+
+-- Old statistics are retained for however long the retention period is. The retention
+   period affects all collected statistics (system, fixed_objects, database, dictionary,
+   schema, table, index). Increasing the retention period means the data dictionary
+   will grow larger
+
+-- Old statistics can be restored if the new statistics are bad
+
+------------------View current history retention setting--------------------------
+
+SELECT DBMS_STATS.GET_STATS_HISTORY_RETENTION
+FROM Dual;
+
+----------------------Change the retention period---------------------------------
+
+EXEC DBMS_STATS.ALTER_STATS_HISTORY_RETENTION(62);
+
+Possible retention values are ...
+  -1: keep forever
+   0: old stats are never saved
+   null: restore retention period to default value
+   number > 0: number of days for retention period
+
+-- Reset the statistics history retention to the factory default 
+
+EXEC DBMS_STATS.ALTER_STATS_HISTORY_RETENTION(null);
+
+-------------------------View Statistics History---------------------------------
+
+-- You can use the [DBA|ALL|USER]_TAB_STATS_HISTORY data dictionary view. Use the 
+  owner and/or table_name in queries
+
+owner: table owner
+table_name: name of table
+stats_update_time: when the statistic was created
+
+-- Sample query
+
+COL owner FORMAT A10
+COL table_name FORMAT A15
+COL stats_update_time FORMAT A40
+
+SELECT owner, table_name, stats_update_time
+FROM dba_tab_stats_history
+WHERE owner = 'PERFTUNE'
+AND table_name = 'ORDERS'
+ORDER BY 3 DESC;
+
+------------------------Restoring Historical Statistics----------------------------
+
+-- Restoring historical statistics might be donw when recent stats gathered cause poor
+   execution plans to be created. 
+
+-- It Can be done on any level but is not often done for the system, fixed_object
+  or dictionary levels. 
+
+-- Might be done for the database level. But is more than likely done at the schema
+   or table level 
+
+-- restoring table statistics restores everything associated with the table which
+   includes table, column and index statistics
+
+RESTORE_SYSTEM_STATS
+RESTORE_FIXED_OBJECTS_STATS
+RESTORE_DICTIONARY_STATS
+RESTORE_DATABASE_STATS
+RESTORE_SCHEMA_STATS
+RESTORE_TABLE_STATS
+
+------------------------Restoring Table Statistics------------------------------
+
+ownname: use null for current user or the userid if it's for a different user
+tabname: name of table to restore statistics for
+as_of_timestamp: timestamp of the statistic being restored to. This must match the
+            timestamp in DBA_TAB_STATS_HISTORY exactly (copy and paste it)
+
+EXEC DBMS_STATS.RESTORE_TABLE_STATS (null, 'HISTORYDEMO', '08-APR-22 01.30.18.196000 PM -6.00')
+
+###################################################################################
+Deleting Statistics
+###################################################################################
+
+-- Can remove any statistics from dictionary. Not often done for System, fixed_objects,
+   or dictionary levels
+-- Might be done for the database level, But is more than likely done for the table,
+   column, and index levels
+
+DELETE_SYSTEM_STATS
+DELETE_FIXED_OBJECTS_STATS
+DELETE_DICTIONARY_STATS
+DELETE_DATABASE_STATS
+DELETE_SCHEMA_STATS
+DELETE_TABLE_STATS
+DELETE_COLUMN_STATS
+DELETE_INDEX_STATS
+
+ownname: use null for current user or the userid if it's for a different user
+tabname: name of table to delete statistics for (required)
+cascade_columns: deletes column stats by default. But can be set to false to save them
+cascade_indexes: deletes index stats by default. But can be set to false to save them
+
+-- The follwing command deletes the table stats for the HISTORYDEMO table including
+   the column and index stats
+
+EXEC DBMS_STATS.DELETE_TABLE_STATS (null, 'HISTORYDEMO');

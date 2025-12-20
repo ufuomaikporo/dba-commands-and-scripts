@@ -1,0 +1,167 @@
+IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.Columns c Where c.Table_Name = 'CENTERPOLYLINE' And c.Column_Name = 'LineName')
+BEGIN
+	DECLARE @sql nvarchar(max)
+
+	SET @sql = 'ALTER TABLE [dbo].[CENTERPOLYLINE]
+	ADD	[LineName] [varchar](255) NULL,
+		[EffectiveEndDate] datetime NULL,
+		[CreatedDate] datetime DEFAULT (getdate()) NULL,
+		[CreatedUser] [varchar](45) DEFAULT (suser_sname()) NULL,
+		[LastModDateTime] datetime DEFAULT (getdate()) NULL,
+		[LastModByUserId] [varchar](45) DEFAULT (suser_sname()) NULL'
+	
+	EXEC sp_executesql @sql
+END;
+GO
+
+IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.Columns c Where c.Table_Name = 'STATIONPOLYLINE' And c.Column_Name = 'StationName')
+BEGIN
+	DECLARE @sql nvarchar(max)
+
+	SET @sql = 'ALTER TABLE [dbo].[STATIONPOLYLINE]
+				ADD	[StationSeriesId] [numeric] (10,0) NULL,
+					[StationName] [varchar](255) NULL,
+					[EffectiveEndDate] datetime NULL,
+					[CreatedDate] datetime DEFAULT (getdate()) NULL,
+					[CreatedUser] [varchar](45) DEFAULT (suser_sname()) NULL,
+					[LastModDateTime] datetime DEFAULT (getdate()) NULL,
+					[LastModByUserId] [varchar](45) DEFAULT (suser_sname()) NULL'
+
+	EXEC sp_executesql @sql
+END;
+GO
+
+IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.Columns c Where c.Table_Name = 'BENDPOINT' And c.Column_Name = 'StationSeriesId')
+BEGIN
+	DECLARE @sql nvarchar(max)
+
+	SET @sql = 'ALTER TABLE [dbo].[BENDPOINT]
+				ADD
+					[BendName] [varchar](255) NULL,
+					[Latitude] [numeric](11, 9) NULL,
+					[Longitude] [numeric](12, 9) NULL,
+					[Measure] [numeric](13, 5) NULL,
+					[EffectiveEndDate] [datetime] NULL,
+					[CreatedDate] [datetime] DEFAULT (getdate()) NULL,
+					[CreatedUser] [nvarchar](45) DEFAULT (suser_sname()) NULL,
+					[LastModDateTime] [datetime] DEFAULT (getdate()) NULL,
+					[LastModByUserId] [nvarchar](45) DEFAULT (suser_sname()) NULL,
+					[StationSeriesId] [int] NULL'
+	
+	EXEC sp_executesql @sql
+END;
+GO
+
+IF object_id('ti_CENTERPOLYLINE') IS NULL
+BEGIN
+	DECLARE @sql nvarchar(max)
+
+	SET @sql = 'CREATE TRIGGER [dbo].[ti_CENTERPOLYLINE] ON [dbo].[CENTERPOLYLINE] AFTER INSERT AS
+					IF EXISTS(SELECT * FROM INSERTED)
+					BEGIN
+						UPDATE CENTERPOLYLINE
+						SET LastModByUserId = SUSER_SNAME(), 
+							LastModDateTime = GETDATE(),
+							CreatedUser = SUSER_SNAME(),
+							CreatedDate = GETDATE()
+						FROM CENTERPOLYLINE AS t, INSERTED d
+						WHERE t.OBJECTID = d.OBJECTID;
+					END;'
+
+EXEC sp_executesql @sql
+END
+GO
+
+IF object_id('ti_STATIONPOLYLINE') IS NULL
+BEGIN
+	DECLARE @sql nvarchar(max)
+
+	SET @sql = 'CREATE TRIGGER [dbo].[ti_STATIONPOLYLINE] ON [dbo].[STATIONPOLYLINE] AFTER INSERT AS
+					IF EXISTS(SELECT * FROM INSERTED)
+					BEGIN
+						UPDATE STATIONPOLYLINE
+						SET LastModByUserId = SUSER_SNAME(), 
+							LastModDateTime = GETDATE(),
+							CreatedUser = SUSER_SNAME(),
+							CreatedDate = GETDATE()
+						FROM STATIONPOLYLINE AS t, INSERTED d
+						WHERE t.OBJECTID = d.OBJECTID;
+					END;'
+
+EXEC sp_executesql @sql
+END
+GO
+
+IF object_id('tu_CENTERPOLYLINE') IS NULL
+BEGIN
+	DECLARE @sql nvarchar(max)
+
+	SET @sql = 'CREATE TRIGGER [dbo].[tu_CENTERPOLYLINE] ON [dbo].[CENTERPOLYLINE] FOR UPDATE AS 
+				IF EXISTS(SELECT * FROM DELETED)
+				BEGIN
+					UPDATE dbo.CENTERPOLYLINE
+					SET LastModByUserId = suser_sname(), LastModDateTime = getdate() 
+					FROM dbo.CENTERPOLYLINE as t, DELETED as d
+					WHERE t.OBJECTID=d.OBJECTID;
+				END'
+
+EXEC sp_executesql @sql
+END
+GO
+
+IF object_id('tu_STATIONPOLYLINE') IS NULL
+BEGIN
+	DECLARE @sql nvarchar(max)
+
+	SET @sql = 'CREATE TRIGGER [dbo].[tu_STATIONPOLYLINE] ON [dbo].[STATIONPOLYLINE] FOR UPDATE AS 
+				IF EXISTS(SELECT * FROM DELETED)
+				BEGIN
+					UPDATE dbo.STATIONPOLYLINE
+					SET LastModByUserId = suser_sname(), LastModDateTime = getdate() 
+					FROM dbo.STATIONPOLYLINE as t, DELETED as d
+					WHERE t.OBJECTID=d.OBJECTID;
+				END'
+
+EXEC sp_executesql @sql
+END
+GO
+
+
+IF object_id('ti_BENDPOINT') IS NULL
+BEGIN
+	DECLARE @sql nvarchar(max)
+
+	SET @sql = 'CREATE TRIGGER [dbo].[ti_BENDPOINT] ON [dbo].[BENDPOINT] AFTER INSERT AS
+					IF EXISTS(SELECT * FROM INSERTED)
+					BEGIN
+						UPDATE BENDPOINT
+						SET LastModByUserId = SUSER_SNAME(), 
+							LastModDateTime = GETDATE(),
+							CreatedUser = SUSER_SNAME(),
+							CreatedDate = GETDATE()
+						FROM BENDPOINT AS t, INSERTED d
+						WHERE t.OBJECTID = d.OBJECTID;
+					END;'
+
+EXEC sp_executesql @sql
+END
+GO
+
+IF object_id('tu_BENDPOINT') IS NULL
+BEGIN
+	DECLARE @sql nvarchar(max)
+
+	SET @sql = 'CREATE TRIGGER [dbo].[tu_BENDPOINT] ON [dbo].[BENDPOINT] FOR UPDATE AS 
+				IF EXISTS(SELECT * FROM DELETED)
+				BEGIN
+					UPDATE dbo.BENDPOINT
+					SET LastModByUserId = suser_sname(), LastModDateTime = getdate() 
+					FROM dbo.BENDPOINT as t, DELETED as d
+					WHERE t.OBJECTID=d.OBJECTID;
+				END'
+
+EXEC sp_executesql @sql
+END
+GO
+
+

@@ -1,0 +1,196 @@
+--Thought process on where to put the new PDB's files:
+
+1) determine where the SEED PDB files are located:
+
+connect to root 
+connect / as sysdba
+
+SQL> alter session set container=PDB$SEED;
+
+Session altered.
+
+SQL> show con_name
+
+CON_NAME
+------------------------------
+PDB$SEED
+
+SQL> select file_name from dba_data_files;
+
+FILE_NAME
+--------------------------------------------------------------------
+C:\APP\oracle\ORADATA\CDB1\PDBSEED\SYSTEM01.DBF
+C:\APP\oracle\ORADATA\CDB1\PDBSEED\SYSAUX01.DBF
+C:\APP\oracle\ORADATA\CDB1\PDBSEED\UNDOTBS01.DBF
+
+PDB SEED files are located: C:\APP\ADMINISTRATOR\ORADATA\ORANT12C\PDBSEED
+
+
+2) determine where the other PDB's files are located. Your new PDB will be located
+in the same file structure, but a new directory:
+
+SQL> alter session set container=ORCLPDB;
+
+Session altered.
+
+SQL> show con_name
+
+CON_NAME
+------------------------------
+ORCLPDB
+
+SQL> select file_name from dba_data_files;
+
+FILE_NAME
+--------------------------------------------------------------------
+C:\APP\oracle\ORADATA\CDB1\ORCLPDB\UNDOTBS01.DBF
+C:\APP\oracle\ORADATA\CDB1\ORCLPDB\SYSAUX01.DBF
+C:\APP\oracle\ORADATA\CDB1\ORCLPDB\SYSTEM01.DBF
+C:\APP\oracle\ORADATA\CDB1\ORCLPDB\USERS01.DBF
+
+PDB files are located: C:\APP\ADMINISTRATOR\ORADATA\ORANT12C\ORCLPDB\
+
+3) Create the new PDB from the SEED PDB:
+
+CREATE PLUGGABLE DATABASE pdb1 ADMIN USER pdb_adm IDENTIFIED BY Password1
+FILE_NAME_CONVERT=('C:\CDB2\oradata\pdbseed',
+                   'C:\CDB2\oradata\orclpdb');
+
+--the above statement will succeed even if the PDB1 directory doesn't exist.
+--the directory: C:\APP\ADMINISTRATOR\ORADATA\ORANT12C\PDB1 will get created
+--the SEED PDB datafiles will get copied to C:\APP\ADMINISTRATOR\ORADATA\ORANT12C\PDB1.
+--you can check on in File Explorer and confirm files are there.
+
+
+4) Open the new PDB in Read Write mode:
+
+a) right after creation the PDB is in a NEW status, and is MOUNTED:
+
+SQL> SELECT pdb_name, status
+     FROM   dba_pdbs
+     ORDER BY pdb_name;
+
+PDB_NAME             STATUS
+-------------------- ----------
+ORCLPDB              NORMAL
+PDB$SEED             NORMAL
+PDB1                 NEW
+
+SQL> SELECT name, open_mode
+     FROM   v$pdbs
+     ORDER BY name;
+
+NAME                                     OPEN_MODE
+---------------------------------------- ----------
+ORCLPDB                                  READ WRITE
+PDB$SEED                                 READ ONLY
+PDB1                                     MOUNTED
+
+
+b) open pdb in read write mode:
+
+SQL> ALTER PLUGGABLE DATABASE pdb1 OPEN READ WRITE;
+
+Pluggable database altered.
+
+c) verify pdb status:
+
+SQL> SELECT pdb_name, status
+     FROM   dba_pdbs
+     ORDER BY pdb_name;
+
+PDB_NAME             STATUS
+-------------------- ----------
+ORCLPDB              NORMAL
+PDB$SEED             NORMAL
+PDB1                 NORMAL
+
+SQL> SELECT name, open_mode
+     FROM   v$pdbs
+     ORDER BY name;
+
+NAME                                     OPEN_MODE
+---------------------------------------- ----------
+ORCLPDB                                  READ WRITE
+PDB$SEED                                 READ ONLY
+PDB1                                     READ WRITE
+
+
+5) If you want the PDB to automatically open on startup, you will need to save the state of the PDB after it has been opened R/W
+
+ALTER PLUGGABLE DATABASE pdb1 SAVE STATE;
+
+select count(*) from dba_pdb_saved_states;
+
+###########################################################################################
+
+
+--Clone PDB from another PDB
+--We will create CLONEPDB from ORCLPDB (it will be an exact copy of ODCLPDB)
+
+--Use same thought process as above to figure out where the ORCLPDB files are located, and where you will create the new PDB files.
+
+1) Place ORCLPDB database in READ ONLY mode (this is your SOURCE database)
+
+SQL> ALTER PLUGGABLE DATABASE orclpdb CLOSE;
+SQL> ALTER PLUGGABLE DATABASE orclpdb OPEN READ ONLY;
+
+2) Create the new PDB, from ORCLPDB:
+
+SQL> CREATE PLUGGABLE DATABASE clonepdb FROM orclpdb
+     FILE_NAME_CONVERT=('C:\app\Oracle\oradata\ORANT12C\orclpdb',
+                        'C:\CDB2\oradata\clonepdb');
+
+
+	**In case of errors, due to INDEX02.DBF file, you will need to move this file to the standard location
+
+	-- move datafile
+	ALTER DATABASE MOVE DATAFILE 'C:\APP\ADMINISTRATOR\ORADATA\ORANT12C\INDEX02.DBF' 
+	TO 'C:\APP\ADMINISTRATOR\ORADATA\ORANT12C\ORCLPDB\INDEX02.DBF';
+	
+	--re-run the create pluggable command.
+
+3) Open new PDB in Read Write mode:
+ 
+SQL> ALTER PLUGGABLE DATABASE clonepdb OPEN READ WRITE;
+
+4) Switch the source PDB back to read/write.
+ 
+SQL> ALTER PLUGGABLE DATABASE orclpdb CLOSE;
+SQL> ALTER PLUGGABLE DATABASE orclpdb OPEN READ WRITE; 
+
+5) Verify state of the new database, and also of the ORCLPDB database:
+
+SQL> SELECT pdb_name, status
+     FROM   dba_pdbs
+     ORDER BY pdb_name;
+
+PDB_NAME             STATUS
+-------------------- ----------
+CLONEPDB             NORMAL
+ORCLPDB              NORMAL
+PDB$SEED             NORMAL
+PDB1                 NORMAL
+
+SQL>
+SQL> SELECT name, open_mode
+     FROM   v$pdbs
+     ORDER BY name;
+
+NAME                                     OPEN_MODE
+---------------------------------------- ----------
+CLONEPDB                                 READ WRITE
+ORCLPDB                                  READ WRITE
+PDB$SEED                                 READ ONLY
+PDB1                                     READ WRITE
+
+
+####################################################################################
+
+Resources from the internet:
+
+Create PDB:
+https://oracle-base.com/articles/12c/multitenant-create-and-configure-pluggable-database-12cr1#manual-clone-pdb
+
+Create CDB:
+https://oracle-base.com/articles/12c/multitenant-create-and-configure-container-database-12cr1#manual

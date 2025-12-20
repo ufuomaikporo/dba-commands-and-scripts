@@ -1,0 +1,333 @@
+###############################################################################################################
+# SETTINGS AND CONFIGURATIONS
+###############################################################################################################
+
+-- View configuration settings
+
+SELECT name, description, value, is_advanced
+FROM sys.configurations;
+
+-- Change configuration settings. The exmaple below turns off remote execution of stored procedures
+
+EXEC sp_configure 'remote access', 0;
+GO
+RECONFIGURE;
+GO
+
+-- View IP address and default port for database server
+
+SELECT DISTINCT local_net_address, local_tcp_port 
+FROM sys.dm_exec_connections 
+WHERE local_net_address is not null
+
+----------------------------------- Check the collation for a server  -----------------------------------
+
+NOTE**: if you get an error about a collation mismatch check to see if there is a remote query that involves a
+	remote server with a different collation from the local server. Use a Linked server and set the 'Use Remote Collation'
+	option in the Linked server properties to 'False'. You MUST rebuild the master database  to change server collation.
+	 The default collation for SQL Server instance is SQL_Latin1_General_CP1_CI_AS
+	
+-- Collation used by the SQL Server instance
+USE Master
+GO
+SELECT SERVERPROPERTY('collation') AS SQLServerCollation
+GO
+
+-- Databases that do not use the same collation as the instance
+USE Master
+GO
+SELECT
+ NAME, 
+ COLLATION_NAME
+FROM sys.Databases
+WHERE collation_name <>  SERVERPROPERTY('collation')
+ ORDER BY DATABASE_ID ASC
+GO
+
+-- Columns that do not use the same collation as the instance
+SELECT table_name, column_name, collation_name 
+FROM INFORMATION_SCHEMA.columns
+WHERE collation_name IS NOT NULL
+AND collation_name <>  SERVERPROPERTY('collation')
+
+
+-- Rebuild master database. Run the following command in windows cmd prompt from the directory containing the SQL Server setup.exe file 
+LOCATION ----> C:\Program Files\Microsoft SQL Server\{default_compatibility_level}\Setup Bootstrap\SQLServer####
+
+Ex. C:\Program Files\Microsoft SQL Server\140\Setup Bootstrap\SQL2017
+
+NOTE****: BACKUP ALL DATABASES ON THE SERVER BEFORE rebuilding the master db. THE REBUILD WILL DROP ALL DATABASES on the server
+
+Setup /QUIET /ACTION=REBUILDDATABASE /INSTANCENAME=MSSQLSERVER /SQLSYSADMINACCOUNTS="EDDYFINDT\DBA" /SAPWD="PassTheWord1234~" /SQLCOLLATION=SQL_Latin1_General_CP1_CI_AS
+
+
+
+#################################################################################################################
+#COMMON COMMANDS
+#################################################################################################################
+-- View a table's structure
+
+EXEC sp_columns table_name
+
+-- Check if a table exists. 'U' means that RectifierReading is a table object . Returns null if object does not exist
+SELECT OBJECT_ID('RectifierReading', 'U')
+
+-- Check if a column exists. (table_name, column_name). Returns null if the column does not exist
+SELECT COL_LENGTH('InternalCoating', 'CheckSumValue')
+
+-- Check if a table feature class
+
+SELECT *
+FROM st_geometry_columns
+WHERE table_name = 'TablName'
+
+#############################################################################################################
+# INTERACTING WITH THE OS
+#############################################################################################################
+
+- Use xp_cmdshell to execute windows commands (cmd) in SQL Server
+- xp_cmdshell to spawns a Windows command shell and passes in a string for execution. 
+Any output is returned as rows of text.
+
+----------------------------------- Enable and Disable xp_cmdshell ------------------------------
+
+---------- ENABLE xp_cmdshell
+-- STEP 1) this turns on advanced options and is needed to configure xp_cmdshell
+EXEC sp_configure 'show advanced options', '1'
+RECONFIGURE
+GO
+
+-- view settings for xp_cmdshell
+SELECT * FROM sys.configurations where name in ('xp_cmdshell','Show advanced options')
+
+
+-- STEP 2) this enables xp_cmdshell
+EXEC sp_configure 'xp_cmdshell', '1' 
+RECONFIGURE
+GO
+
+-- hides advanced settings for security reasons
+EXEC sp_configure 'show advanced options', 0;
+GO
+RECONFIGURE;
+GO
+
+------------ DISABLE xp_cmdshell
+-- STEP 1) this turns on advanced options and is needed to configure xp_cmdshell
+EXEC sp_configure 'show advanced options', '1'
+RECONFIGURE
+
+-- view settings for xp_cmdshell
+SELECT * FROM sys.configurations where name in ('xp_cmdshell','Show advanced options')
+
+
+-- STEP 2) this disables xp_cmdshell
+EXEC sp_configure 'xp_cmdshell', '0' 
+RECONFIGURE
+
+-- hides advanced settings for security reasons
+EXEC sp_configure 'show advanced options', 0;
+GO
+RECONFIGURE;
+GO
+
+
+------------------------------------------ Add A network/Shared Drive to SSMS ---------------------
+
+-- Run this on the actual server node to make the change persistent
+
+-- Allows you to see advanced settings
+EXEC sp_configure 'show advanced options', 1;
+GO
+RECONFIGURE;
+GO
+
+-- view settings for xp_cmdshell
+SELECT * FROM sys.configurations where name in ('xp_cmdshell XPs','Show advanced options')
+
+-- Enable xp_cmdshell
+EXEC sp_configure 'xp_cmdshell',1
+GO
+RECONFIGURE
+GO
+
+-- Add Network drive paths  ***** EXEC XP_CMDSHELL 'NET USE DRIVE: \\FolderPath'
+EXEC XP_CMDSHELL 'NET USE H: \\backups.cgy.dynamicrisk.net\DB_Backups_Nightly' 
+EXEC XP_CMDSHELL 'NET USE I: \\backups.cgy.dynamicrisk.net\DB_Backups_Monthly' 
+
+-- hides advanced settings for security reasons
+EXEC sp_configure 'show advanced options', 0;
+GO
+RECONFIGURE;
+GO
+
+-------------------------------------- List files ann subdirectories in a directory using xp_cmdshell -------------------
+
+https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/dir
+
+
+EXEC xp_cmdshell 'dir /b "\\backups.cgy.dynamicrisk.net\DB_Backups_Nightly\Temporary_Backups\*.bak"' 
+
+-------------------------------------- Create directory if it does not exist ---------------------------------------
+
+-- Insert the execute statement into a table variable to hide output 
+DECLARE @Void TABLE (Output VARCHAR(MAX))
+SET @SQL = 'EXEC master..xp_cmdshell ''IF NOT EXIST "' + @WeeklyBULocation + '" mkdir  "' + @WeeklyBULocation + '"'''
+
+EXECUTE (@SQL)
+INTO @Void
+
+------------------------------------- List Files in a Directory ----------------------------
+
+---- OPTION 1) 
+
+-- Get the filenames of all backupfiles in a directory and store it in a table variable
+DECLARE @DirTree TABLE (
+    Id INT IDENTITY(1,1),
+    SubDirectory NVARCHAR(255),
+    Depth SMALLINT,
+    FileFlag BIT,
+    ParentDirectoryID INT
+   )
+
+-- Get the list of all files in the backup directory
+INSERT INTO @DirTree (SubDirectory, Depth, FileFlag)
+EXEC master..xp_dirtree @BULocation, 10, 1
+
+SELECT * FROM @DirTree
+WHERE Subdirectory LIKE '%.bak'
+
+-------- OPTION 2
+
+DROP TABLE IF EXISTS ##test
+CREATE TABLE ##test (Input VARCHAR(500))
+DECLARE @SQL VARCHAR(MAX) 
+DECLARE @BuLocation VARCHAR(500) = '\\dras-dbbkp02\P_DB_Backups_Weekly'
+ 
+SET @SQL = 'INSERT INTO ##Test
+EXEC master..xp_cmdshell ''DIR /n "' + @BuLocation + '"'''
+
+EXECUTE (@SQL)
+
+SELECT CAST(SUBSTRING(Input, 0, PATINDEX('%[AM|PM]%', Input) + 2) AS DATETIME) AS LastWriteTime
+,CEILING(CAST(REPLACE(RTRIM(LTRIM(SUBSTRING(Input, PATINDEX('%[AM|PM]%', Input) + 3, PATINDEX('%[a-z]%', Input) - 1))), ',', '') AS NUMERIC)/1024) AS Size_KB
+, SUBSTRING(SUBSTRING(Input, PATINDEX('%[AM|PM]%', Input) + 3, LEN(Input)), PATINDEX('%[a-z]%', Input), LEN(Input)) FileName
+FROM ##test
+WHERE (Input LIKE '%AM%' OR Input LIKE '%PM%') AND Input NOT LIKE '%<DIR>%'
+
+##############################################################################################
+# TROUBLESHOOTING 
+##############################################################################################
+
+TIPS
+
+1. Check both the Event Viewer and the SQL Server logs. Sometimes the event view log has more info
+
+----------------------------------- CHECK EVENT VIEWER LOGS  ------------------------------------------
+
+Check the Windows Event log when trying to debug issues with the SQL Server
+
+  1. Go to Control Panel >> System and Security >> View event logs (or search "event viewer" in task bar search)
+  2. In the Event Viewer go to >> Expand "Windows Logs" >> Click "Application" 
+  3. scan through and click on the log entries associated with the instance name of the server under the "source" column. The "level" column
+    will tell you if the entry caused an error. There are 'Filter currrent log' option in the right panel of Event Viewer to filter the results
+
+---------------------------------- CHECK THE SQL SERVER LOGS ------------------------------------------
+
+LOCATIONS 
+
+1. For info on Server patches (SP), Cumulative Updates (CU), installations 
+
+	C:\Program Files\Microsoft SQL Server\<Version>\Setup Bootstrap\Log
+
+2. For info on General database actions 
+
+	C:\Program Files\Microsoft SQL Server\MSSQL<Version>.<Instancename>\MSSQL\Log
+
+The server logs contains much more detailed information about any action performed on the database including whether the action was successful
+and any issues or errors associated with the action. 
+
+---- TIPS
+
+1. Look at the 'Summary_ServerName' file first to get a detailed summary of significant events
+
+------------------------------- SOLUTIONS TO PREVIOUSLY ENCOUNTERED ISSUES -----------------------
+ 
+PROBLEM: SQL Server service refuses to start on a server restart. You check the Event Viewer logs and find an error occured
+		during an automated script upgrade of the master database.
+		
+SOLUTION: This means that the server is stuck in "script upgrade mode". when in in "script upgrade mode" connections to the server
+		instance are blocked. If an error occurs in this mode the instance will not start up. SQL Server automatically searches for and runs any
+		available Microsoft generated upgrade scripts whenever there is a server patch (SP) or cumulative update (CU)
+
+- QUICK FIX is to use the trace flag 902 command to bypass script upgrade mode. This does not resolve the issue and will require
+  you to issue the trace flag 902 command everytime you need to restart the service. Using the command prompt in administrator mode enter, and
+   replace 'InstanceName' with the actual SQL Server instance name. for default instances use mssqlserver.
+   
+STEP 1) go to the SQL Server binn directory (contains SQL Server binary files)
+ 
+	C:\Program Files\Microsoft SQL Server\MSSQL<version>.<instanceName>\MSSQL\Binn
+
+STEP 2) Issue command the trace flag 902 command to bypass script upgrade mode
+
+	net start InstanceName /T902
+ 
+-  The COMPLETE FIX would be to find the reason for the failed master db upgrade. fix it and restart the SQL Server service
+
+----------------- Server patch update failed to update SSIS because of missing SSIS components 
+
+In the particular instance I encountered it was because the Integration service feature was missing on a new server after a database server migration. 
+I found the following error in the event viewer log "Script level upgrade for database 'master' failed because upgrade step 'ISServer_upgrade.sql'".
+The fix was to use the SQL Sever installation media to install the SQL Server Integration Services feature (creates an SSIS database); 
+Create a login and user for the SSIS database; grant necessary execute permissions on the "internal.cleanup_server_project_version"
+and "internal.cleanup_server_retention_window" stored procs; and make the SSIS user the owner of the SSIS db.
+
+
+STEP 1) Find the setup.exe installer file and go through the installtion wizard to add the SQL Server Integration Services feature if 
+	there is no SSIS database on the server
+
+	C:\Program Files\Microsoft SQL Server\140\Setup Bootstrap\<SQL SERVER Version>
+	
+STEP 2) Start the SQL Server service without the 902 trace flag
+
+STEP 3) Check if the assembly "ISSERVER" is in the SSISDB database by using the following query. Create it if it does not exists
+
+	Use SSISDB
+	GO
+	SELECT * FROM sys.assemblies WHERE name = 'ISSERVER'
+	
+	DECLARE @asm_bin varbinary(max);
+	SELECT @asm_bin = BulkColumn
+	FROM OPENROWSET (BULK N'C:\Program Files\Microsoft SQL Server\<VersionNumber>\DTS\Binn\Microsoft.SqlServer.IntegrationServices.Server.dll',SINGLE_BLOB) AS dll
+	CREATE ASSEMBLY ISSERVER FROM  @asm_bin  WITH PERMISSION_SET = UNSAFE
+	ALTER DATABASE SSISDB SET TRUSTWORTHY ON
+
+STEP 4) Create a server login and database user with the name '##MS_SSISServerCleanupJobLogin##'. This will be the owner of the
+	   SSISDB database which is created after the SQL Server Integration Services feature is installed
+
+	USE SSISDB
+		
+	CREATE LOGIN [##MS_SSISServerCleanupJobLogin##] 
+	WITH PASSWORD=N'SSIS202423', 
+	DEFAULT_DATABASE=[master],
+	DEFAULT_LANGUAGE=[us_english], 
+	CHECK_EXPIRATION=OFF, 
+	CHECK_POLICY=OFF
+	GO
+	
+	-- Map the SSIS database user to the login if the database user already exists
+	ALTER USER [##MS_SSISServerCleanupJobUser##] with LOGIN = [##MS_SSISServerCleanupJobLogin##]
+	
+	-- Create the database user and map it to the login for the SSIS user if the database user does not already exist
+	CREATE USER [##MS_SSISServerCleanupJobUser##] FOR LOGIN [##MS_SSISServerCleanupJobLogin##]
+	WITH DEFAULT_SCHEMA=[dbo]
+	
+	-- Grant necessary permissions on stored procedures
+	GRANT EXECUTE ON [internal].[cleanup_server_project_version] TO [##MS_SSISServerCleanupJobUser##]
+	GO
+	GRANT EXECUTE ON [internal].[cleanup_server_retention_window] TO [##MS_SSISServerCleanupJobUser##]
+	GO
+	
+	-- Make the SSIS user the owner of the SSIS database
+	ALTER AUTHORIZATION ON database::SSISDB TO [##MS_SSISServerCleanupJobLogin##];
+	

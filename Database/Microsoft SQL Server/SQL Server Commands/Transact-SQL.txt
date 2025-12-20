@@ -1,0 +1,410 @@
+###################################################################################
+# COMMANDS 
+####################################################################################
+
+-------------------------- RETURN and BREAK CONTINUE --------------------------------------
+
+-- You can completely exit the script at any point with the RETURN command
+RETURN
+
+-- Exit a loop with the 'BREAK' command
+BREAK
+
+-- Skip code after CONTINUE command and go to top of loop (Loop iteration update must be near beginning of loop)
+CONINUE
+
+------------------------------------------- EXISTS/NOT EXISTS ---------------------------------------------------
+USES
+1) To query something based on the condition that a row exists in a table use the following. 
+
+
+- The query below finds the rows in SQL2019 server version of 'Student' table that are missing from SQL2017 version of 'Student' table
+
+SELECT * from SQL2019.DatabaseName.dbo.Students
+WHERE NOT EXISTS (SELECT * FROM SQL2017.DatabaseName.dbo.Students)
+
+############################################################################################
+# VARIABLES
+##############################################################################################
+
+-------------------- Create a variable that is persistent for entire session -----------------
+- variable that persists through entirity of a batch script
+
+DECLARE @StageDatabaseName NVARCHAR(100)  = 'Variable Value'
+
+--- Creates a variable that is an sql_variant datatype
+EXEC sp_set_session_context N'StageDatabaseName', @StageDatabaseName; 
+
+--- must convert the sql_variant variable to varchar to assign it to a varchar variable
+SET @StageDatabaseName = CONVERT(VARCHAR, SESSION_CONTEXT(N'StageDatabaseName')); 
+
+##################################################################################################################
+# FUNCTIONS
+##################################################################################################################
+------------------------------------------- COALSECE/STRING_AGG ---------------------------------------------
+
+STRING_AGG function only works on SQL Server 2017 and higher
+
+-- The WITHIN GROUP command allows you to sort the data
+SELECT STRING_AGG(name, ', ') WITHIN GROUP (ORDER BY column_id)
+FROM sys.columns
+WHERE is_computed = 0 AND OBJECT_NAME(object_id) = 'ListDomain'
+
+------- ALTERNATIVE TO STRING_AGG FOR SQL Server 2016 and lower
+
+SELECT STUFF(
+				(SELECT ', ' + name
+				FROM sys.columns 
+				WHERE is_computed = 0 AND OBJECT_NAME(object_id) = 'ListDomain'
+				ORDER BY column_id
+				FOR XML PATH(N''), TYPE
+				).value(N'.[1]', N'nvarchar(max)'), 1, 2, N''
+			)
+
+---------- COALESCE
+-- The example of the COALESCE function below can be done with the STRING_AGG function
+
+SELECT @trigger_id_list = COALESCE(@trigger_id_list + ', ', '') + CONVERT(VARCHAR(100), trigger_id) 
+FROM #TriggerList_tbl
+
+
+------------------------------------- Work around to Executing functions remotely ------------------------
+
+-- This only works if the target and source database are on the same server. If going across servers, use a linked server
+
+EXECUTE ('
+USE PLAINS_IRASv6_STAGE
+SELECT * FROM sys.objects WHERE OBJECT_NAME(parent_object_id) = ''ListDomain''
+  '
+)
+
+--------------------------------------- Object functions ---------------------------------------
+
+-- Check if a an object exists (i.e, table (U), constraint, trigger (TR), stored procedure, etc)
+
+IF OBJECT_ID('ObjectName', 'objectTypeCode') IS NOT NULL
+
+-- Check if a column exists (you can prequalify TableName with schema and database names)
+
+IF COL_LENGTH('TableName', 'ColumnName')
+
+##############################################################################################
+CTE, ROW_NUMBER(), PARTITION BY, DENSE_RANK
+##############################################################################################
+
+----------------------------------- ROW_NUMBER() --------------------------------
+
+-- Generate row Id column
+
+SELECT ROW_NUMBER() OVER (ORDER BY (SELECT 1)) AS rowid, name
+FROM sys.tables
+
+--OR
+
+-- ORDER clause sorts it by name
+SELECT ROW_NUMBER() OVER (ORDER BY name) AS rowid, name
+FROM sys.tables
+
+--- insert sequential rowid into table starting from current max id of target table
+INSERT INTO TableName (Id, name)
+SELECT ROW_NUMBER() OVER (ORDER BY Id) + (SELECT MAX(Id) FROM LD_CoatingCondition), name
+FROM TableName
+
+-- Generate row-id column starting from the max Id of another table
+SELECT ROW_NUMBER() OVER (ORDER BY (SELECT 1)) + (SELECT MAX(Id) FROM sys.columns)
+FROM sys.tables
+
+
+-- The query below creates a row id psuedo-column similar to rownum in ORACLE. 
+    it also sorts the table by the columns mentioned in the ORDER BY clause
+
+WITH query AS (
+-- This query sorts the table by the name column and creates a RowNum psuedo-column based on the sort
+SELECT  ROW_NUMBER() OVER(ORDER BY name ASC) AS RowNum, FileId
+FROM @DataFileInfo
+)
+SELECT @Type = CASE 
+				WHEN FileId = 1 THEN '.mdf'','
+				WHEN FileId = 2 THEN '_LOG.ldf'''
+				ELSE CAST(@Counter AS NVARCHAR) + '.ndf'','
+				END
+FROM query
+WHERE Id = @Counter;
+
+------------------------------------------  DENSE_RANK() ------------------------------
+
+-- Gives the same numbering (starting from 1) to same combination of values in columns listed after ORDER BY clause.
+ Every new combination of values in columns listed after the ORDER BY clause gets a new numbering (consecutive). The Numbering  
+ restarts with each unqiue combination of values after the PARTITION clause
+
+-- Rows with the same value in the 'name' column will receive the same rank number
+SELECT DENSE_RANK() OVER (ORDER BY name), name
+FROM TABLE
+
+-- Rows with the same code get the same numbering. The numbering restarts with each new LDTableName
+SELECT DENSE_RANK() OVER (PARTITION BY LDTableName  ORDER BY Code) 
+
+------------------------------------------- PARTITION BY -----------------------------------
+
+-- You can use the PARTITION BY clause to get around restrictions with the GROUP BY clause
+
+-- The query below calculates the average, mininum, and total OrderAmount by Customercity while including 
+   each row from the Orders table with columns that are not part of the aggregate column list
+SELECT Customercity, 
+       CustomerName, 
+       OrderAmount, 
+       AVG(Orderamount) OVER(PARTITION BY Customercity) AS AvgOrderAmount, 
+       MIN(OrderAmount) OVER(PARTITION BY Customercity) AS MinOrderAmount, 
+       SUM(Orderamount) OVER(PARTITION BY Customercity) TotalOrderAmount
+FROM [dbo].[Orders];
+
+
+
+-- The following query deletes duplicate rows using CTE (this can also be done using the GROUP BY function).
+   it numbers each unique combination of the columns specifed after the PARTITION BY clause beginning from 1 and restarts the
+   numbering for each new combination of the aforementioned columns. Duplicate occurences of the the columns will be assigned 
+   a row_num value of 2 and higher
+   
+-- Columns after PARTITION BY determines the criteria for identifying duplicate rows (each unique combination of values 
+	for column after the PARTITION clause is numbered consecutively. Restart numbering on new combination of values)
+-- the ORDER BY clause after the PARTITION BY clause determines ordering when there is duplication.
+Can be used to delete duplicate entries from a table or filter out duplicates in a query
+   
+WITH duplicates AS  
+( SELECT Id, 
+		 FirstName, 
+		 LastName, 
+		 Email,
+		 ROW_NUMBER() OVER (PARTITION BY FirstName, LastName, Email ORDER BY FirstName, LastName, Email ) row_num 
+  FROM tbl_Mcastudents  
+)  
+DELETE FROM duplicates WHERE row_num > 1; 
+
+-- The suqQuery below finds unique values, ignoring duplicate columnName (WHERE rownum = 1). The outer query creates a comma seperated string list ordered by columnId using the STRING_AGG function. The WITHIN GROUP clause allows ordering for STRING_AGG function 
+
+SELECT @ColumnList = STRING_AGG(columnText, ', ') WITHIN GROUP (ORDER BY columnId)
+FROM
+(SELECT columnId, 
+	   columnName,
+	   columnText,
+	   ROW_NUMBER() OVER (PARTITION BY columnName ORDER BY columnId, referencedTable) AS rownum
+FROM ##ColumnsList
+) subq	
+WHERE rownum = 1
+
+
+
+##########################################################################################################################
+TYPES OF QUERIES
+##########################################################################################################################
+
+-- You can rename the query column using an '=' in the query columnlist and refer to the new query column name in WHERE clause
+
+SELECT  UnitCode, UnitTypeDomainId = s.ID 
+FROM table 
+WHERE UnitTypeDomainId = 20
+
+-- load multiple vairables with one query
+
+SELECT top 1 @columnName = columnName , @referencedTable = referencedTable, @referencedColumn = referencedColumn
+FROM @columnsList WHERE processed = 0
+
+--------------------------------------- Multi-Column subquery ---------------------------------------------------
+https://stackoverflow.com/questions/1136380/sql-where-in-clause-multiple-columns
+
+-- The subquery select column list can contain the columns that need to be matched. The WHERE clause within the subquery 
+ensures uniqueness by forcing a correlated search that acts like a join condition. Columns that match the suquery WHERE clause
+conditions are compared between the two 
+(match on PK if T1 and T2 are the same table or match on PK-FK columns if T1 and T2 have a parent-child relationship)
+
+- The query below displays items in T1 that do not exist in T2
+
+SELECT * FROM T1
+WHERE EXISTS
+(SELECT * FROM T2 
+ WHERE T1.a=T2.a and T1.b=T2.b)
+ 
+--------------------------------------- Remote Queries ------------------------------
+
+----- OPTION 1) 
+
+-- 1) Runs directly on remote linked server (faster than other methods)
+-- 2) Allows you to utiize 'USE DatabaseName' command to facilitate use of built-in SQL functions(i.e OBJECT_NAME()) on remote databases/servers. 
+-- 3) REQUIRES linkedserver to already be setup. 
+-- Limitation: 1) You can't use the 'BEGIN TRANSACTON' and 'COMMIT TRANSACTION' within 'EXECUTE' command
+
+EXECUTE ('
+USE PGE_IRASv6_QRAD_CA_TEST
+
+SELECT DB_NAME(), 
+	   OBJECT_NAME(parent_object_id) AS TableName,         
+	   COL_NAME(parent_object_id, parent_column_id) AS ColumnName,         
+	   NULL AS DomainCatalogId,         
+	   NULL AS DomainDescr,          
+	   NULL AS LDTableName,        
+	   0 AS flag    
+FROM [PGE_IRASv6_QRAD_CA_TEST].sys.foreign_key_columns
+WHERE OBJECT_NAME(referenced_object_id) = ''ListDomain''    
+AND OBJECT_NAME(parent_object_id) NOT IN (''RememberedListDomainValues'', ''VirtualTableDataListDomain'', ''ActionItemPropDCXRef'', ''CategoryDataListDomainXRef'')  '
+) AT [LinkedServerName]
+
+
+----- OPTION 2)
+
+SELECT * 
+    FROM OPENQUERY ([linkedserver], 
+        'SELECT * FROM AdventureWorksLT.SalesLT.Customer');  
+		
+----OPTION 3) runs the query on the local server using linked server info
+
+SELECT * FROM LinkedServer.AdventureWorksLT.SalesLT.Customer
+
+---------Work a
+
+####################################################################
+# JOINS
+####################################################################
+
+/*************************TIPS******
+Considerations for effective joins
+
+1. Use primary key (PK) and foreign key (FK) relationships relationships for join conditions
+	when joining child tables to parent tables
+2. Always consider what columns in a table are required to make the rows unique. For example a tables that stores
+	a employee info might have primary key on a column called EmployeeId. You can use the EmployeeId column to make rows 
+	unique. But you could also use columns dependent on the primary key (i.e an EmployeeName column) for make rows unique
+
+**********************************************/
+
+INNER JOIN 
+- used when you one to return a result only when there in a match for the join condition in both tables
+- whether joining 2 or more tables, the table order matters for performance and readability, but not the final result (same result is returned)
+
+RIGHT and LEFT OUTTER JOIN (RIGHT JOIN, LEFT JOIN)
+- used when you want one table to return results even when there is no match for the join condition in the other table. 
+	results with no match in the other table will give null values for the other table
+- whether joining 2 or more tables, the table order matters because it determines which table will return a 
+result despite no matches. The placement of join conditions on each table also matters. You can join three tables all to one
+another but place the join conditions on different tables (even with same set of join condition columns) depending on the order of tables 
+
+#########################################################################
+# ERROR HANDLING 
+##############################################################################
+https://dba.stackexchange.com/questions/48912/how-to-break-sql-script-execution
+
+- You can Use @@ERROR variable in combination with THROW command to exit the entire batch script. Otherwise
+THROW, RETURN and RAISEERROR will only exit the current batch and not the entire script. A batch is terminated by GO command
+
+
+------------------------ Capture all errors from an action and store in a table --------------------
+
+https://dba.stackexchange.com/questions/139187/catching-two-error-messages-throw-into-table
+
+-- Replace every instance of 2016 with your spid
+
+-- Create an Extended event to capture errors
+CREATE EVENT SESSION [Error Handling Session(2016)]
+ON SERVER 
+ADD EVENT sqlserver.error_reported
+(
+    ACTION(
+        sqlserver.session_id,
+        sqlserver.sql_text
+    )
+    WHERE [package0].[not_equal_unicode_string]([message],N'''''') 
+    AND [severity]>(10) 
+    AND [sqlserver].[session_id]=(2016)
+) 
+ADD TARGET package0.ring_buffer
+WITH (
+    --ALLOW_SINGLE_EVENT_LOSS
+    --NO_EVENT_LOSS
+    EVENT_RETENTION_MODE=ALLOW_SINGLE_EVENT_LOSS,
+
+    MAX_MEMORY=4096 KB,
+    MAX_DISPATCH_LATENCY=1 SECONDS,
+    MAX_EVENT_SIZE=0 KB,
+    MEMORY_PARTITION_MODE=NONE,
+    TRACK_CAUSALITY=ON,
+    STARTUP_STATE=OFF
+);
+
+ALTER EVENT SESSION [Error Handling Session(2016)] ON SERVER STATE=START;
+
+BEGIN TRY
+	-- sample action that generates an error
+    BACKUP DATABASE master
+    TO DISK = 'master.diff.bak'
+    WITH DIFFERENTIAL;
+END TRY
+BEGIN CATCH
+    DECLARE @XEData XML
+
+	-- Event is captures and stored in sys tables 
+    SELECT @XEData = CAST(xet.target_data AS XML)
+    FROM sys.dm_xe_session_targets AS xet
+    JOIN sys.dm_xe_sessions AS xe
+        ON (xe.address = xet.event_session_address)
+    WHERE xe.name = 'Error Handling Session(2016)';
+
+    /*
+    Check value of "totalEventsProcessed" to ensure events have been 
+    dispatched to event session target (ring_buffer).
+    If no events have been processed, delay for a period of MAX_DISPATCH_LATENCY +1 (in seconds).
+    */
+    IF @XEData.value('(/RingBufferTarget/@totalEventsProcessed)[1]', 'INT') = 0
+    BEGIN
+        WAITFOR DELAY '00:00:02';
+
+        SELECT @XEData = CAST(xet.target_data AS XML)
+        FROM sys.dm_xe_session_targets AS xet
+        JOIN sys.dm_xe_sessions AS xe
+            ON (xe.address = xet.event_session_address)
+        WHERE xe.name = 'Error Handling Session(2016)';
+    END
+
+    --Comment/uncomment as desired to show the formatted XML session data.
+    SELECT @XEData;
+
+    --Shred the XML. Do whatever you want with this data: 
+    -- log it to a table, create and send an email alert, etc.
+    SELECT 
+        x.c.value(N'(@name)[1]', N'NVARCHAR(MAX)') AS EventName,
+        x.c.value(N'(@timestamp)[1]', N'datetime') AS EventTime,
+        x.c.value(N'(data[@name="error_number"]/value)[1]', N'NVARCHAR(MAX)') AS ErrorNumber,
+        x.c.value(N'(data[@name="severity"]/value)[1]', N'NVARCHAR(MAX)') AS Severity,
+        x.c.value(N'(data[@name="state"]/value)[1]', N'NVARCHAR(MAX)') AS [State],
+        x.c.value(N'(data[@name="user_defined"]/value)[1]', N'NVARCHAR(MAX)') AS UserDefined,
+        x.c.value(N'(data[@name="category"]/text)[1]', N'NVARCHAR(MAX)') AS Category,
+        x.c.value(N'(data[@name="destination"]/text)[1]', N'NVARCHAR(MAX)') AS Destination,
+        x.c.value(N'(data[@name="is_intercepted"]/value)[1]', N'NVARCHAR(MAX)') AS IsIntercepted,
+        x.c.value(N'(data[@name="message"]/value)[1]', N'NVARCHAR(MAX)') AS [Message],
+        x.c.value(N'(action[@name="sql_text"]/value)[1]', N'NVARCHAR(MAX)') AS SqlText,
+        x.c.value(N'(action[@name="session_id"]/value)[1]', N'NVARCHAR(MAX)') AS SessionId
+    FROM @XEData.nodes('//RingBufferTarget/event') AS x(c)
+    --WHERE x.c.value(N'(data[@name="destination"]/text)[1]', N'NVARCHAR(MAX)') = 'USER'
+
+END CATCH
+
+ALTER EVENT SESSION [Error Handling Session(2016)] ON SERVER STATE=STOP;
+DROP EVENT SESSION [Error Handling Session(2016)] ON SERVER;
+GO 
+
+
+#################################################################
+ COLLECTION OF USEFUL QUERIES
+#################################################################
+
+-- Copy table structure without the data (does not create PK, FK, triggers, etc on tabl0e but maintains null and not null constraints)
+
+SELECT * INTO CopyTable FROM OriginalTab WHERE 1 = 0;
+
+-- Check if a table is empty (returns 1 if none of the target tables are empty)
+
+SELECT 1 WHERE EXISTS (SELECT * FROM TargetTable1)
+AND (SELECT * FROM TargetTable2)
+
+
+		
+		
+	

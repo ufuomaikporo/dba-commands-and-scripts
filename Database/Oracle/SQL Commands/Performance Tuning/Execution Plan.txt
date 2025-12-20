@@ -1,0 +1,107 @@
+##################################################################
+Indexes
+######################################################################
+
+-- Bitmap index good for low cardinality tables (lots of repeated values, not many 
+distinct values, i.e eye colour)
+
+-- Bitmap indexes should not be used in OLTP envrionemnt. Best used in DSS or 
+  data warehousing environment
+
+#########################################################################
+Execution Plan
+########################################################################
+
+-- Execution Plans are stored in the Atomatic Workload Repository (AWR) and
+   in V$SQL_PLAN dynamic view
+
+-- The V$SQL_PLAN view contains execution plan info for each cursor loaded in
+   the library cache. The AWR collects, processes and maintains performance
+  statistics for the database
+
+-- You can view execution plans through 1) Enterprise Manager 2) DBMS_XPLAN
+   3) SQL Tuning Sets (19c) 4) Plan Table (results of EXPLAIN PLAN command)
+
+--Dynamic sampling not as good as actual statistics and is temporary. Actual 
+  statistics are stored in the data dictionary
+
+-- EXPLAIN PLAN does not give the actual run time execution plan due to lack of 
+  access to bind variables and a possible difference in the environment and/or 
+  session settings when the statement is actually ran. To see the actual execution
+  plan turn on AUTOTRACE before running the sql statement or view the v$sql_plan 
+  table after running the statement
+
+---------------------------Using Autotrace----------------------------------
+
+-- Use AUTOTRACE to capture information about execution plans and performance statistics
+   on queries executed in your session (Use TRACE with triggers to perform a similar
+   function on other user sessions)
+
+-- AUTOTRACE is easier to use than DBMS_XPLAN, but it doesn't allow you to keep permanent 
+   records like DBMS_XPLAN
+
+-- AUTOTRACE might use Adaptive Sampling if the stats are missing or stale, or if the 
+   WHERE predicate is complex. The execution plan is more accurate than the EXPLAIN
+   PLAN command. 
+
+-- EXPLAIN PLAN uses known statistics stored in the data dictionary and does not check
+   for stale or missing statistics or check for complex predicates
+
+-- AUTOTRACE incurs unnecessary overhead and should be turned off if it is not needed
+
+-- To turn on AUTOTRACE
+
+SET AUTOTRACE ON|OFF;
+
+-- To turn on AUTOTRACE and get only the execution plan and suppress the 
+   statistics by using the ON EXPLAIN option or get only the statistics while
+   suppressing the execution plan by using the ON STATISTICS option 
+
+SET AUTOTRACE ON EXPLAIN | STATISTICS;
+
+-- To turn on AUTOTRACE and suppress the query ouput and execution plan 
+   TRACEONLY STATISTICS), or to suppress the query output and statistics 
+   (TRACEONLY EXPLAIN) use the following options
+
+SET AUTOTRACE TRACEONLY {STATISTICS | EXPLAIN};
+
+---------------------------Adaptive Plan Techniques-----------------------------------
+
+-------------------------Creating a Plan Table--------------------------
+
+-- To see the last explained plan in the temporary table:
+
+SELECT Plan_Table_Output 
+FROM TABLE(DBMS_XPLAN.Display);
+
+
+STEP 1) run the following script
+
+@%oracle_Home%\rdbms\admin\utlxplan.sql
+
+OR
+
+@?\rdbms\admin\utlxplan.sql
+
+STEP 2) You can rename the plan table
+
+RENAME Plan_Table to MY_PLAN_TABLE;
+
+STEP 3) Use the explain plan command to explain the following SELECT query into
+       the plan table MY_PLAN_TABLE. Give the Select query a statement_id
+
+EXPLAIN PLAN SET Statement_ID='STEP3' 
+INTO My_Plan_Table
+FOR
+SELECT Quantity, PurchasePrice
+FROM Details
+WHERE OrderID = 100
+AND OrderLine = 1;
+
+STEP 4) Display the execution plan for the statement (specify the plan table
+     name and statement ID)
+
+SELECT PLAN_TABLE_OUTPUT
+FROM TABLE(DBMS_XPLAN.DISPLAY(
+'MY_PLAN_TABLE','STEP3'));
+

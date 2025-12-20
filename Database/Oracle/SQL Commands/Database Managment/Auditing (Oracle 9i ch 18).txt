@@ -1,0 +1,193 @@
+
+---------AUDITING DATA DICTIONARY---------------
+
+ALL_DEF_AUDIT_OPTS   -- Default audit options
+DBA_STMT_AUDIT_OPTS  --Statement auditing options
+DBA_PRIV_AUDIT_OPTS  -- Privilege auditing options
+DBA_OBJ_AUDIT_OPTS   -- Schema object auditing options
+UNIFIED_AUDIT_TRAIL  -- for unified audit records (found in AUDSYS schema)
+AUDITABLE_SYSTEM_ACTIONS  -- List of auditable system-wide options
+AUDITABLE_OBJECT_ACTIONS  -- List of object-level action audit options
+AUDIT_UNIFIED_POLICIES
+AUDIT_UNIFIED_ENABLED_POLICIES
+
+--------------------------------SHow info about auditing
+
+-- Check if auditing is enabled by checking the audit parameters. If the audit_trail
+   parameter is set to DB then auditing is enabled and the audit records are directed to 
+   the database audit trail (SYS.AUD$), except for records that are always written to 
+   the operating system audit trail
+-- if audit_sys_operations is set to true then actions performed by the sys user or
+   any users with the SYSDBA or SYSOPER privileges will be audited
+-- if audit_syslog_level is set to true then On UNIX systems, it writes the SYS and 
+   standard OS audit records to the system audit log using the SYSLOG utility.
+
+SHOW PARAMETER audit
+
+COL user_name FORMAT A10
+COL proxy_name FORMAT A10
+COL audit_option FORMAT A30
+
+SELECT * FROM dba_stmt_audit_opts;
+
+------------LIST OF AUDITABLE SYSTEM OPTIONS---------
+
+COLUMN name FORMAT A20
+COLUMN component FORMAT A30
+
+SELECT * FROM AUDITABLE_SYSTEM_ACTIONS; 
+
+#######################################################
+----------ENABLE UNIFIED AUDITING----------------
+#######################################################
+
+----------------CHECK IF UNIFIED AUDITING IS ENABLED-------------------------------
+
+SELECT value FROM v$option
+WHERE parameter = 'Unified Auditing';
+
+-----------1) SHUT DOWN THE DATABASE INSTANCE--------
+
+SHUTDOWN IMMEDIATE
+
+-----------2) SHUTDOWN THE LISTENER and ORACLE SERVICE-----------------------
+
+WINDOWS
+
+>lsnrctl stop (in OS command prompt)
+>net stop OracleService[SID]      (stop service in WINDOWS)
+
+LINUX 
+
+lsnrctl stop
+srvctl stop database -d tst2    (stop service in Linux)
+
+-------------3) ENABLE UNIFIED AUDITING EXECUTABLE----------
+
+WINDOWS
+
+-- Rename unified auditing DLL file from “orauniaud12.dll.dbl” to “orauniaud12.dll”
+
+LINUX
+
+cd $ORACLE_HOME/rdbms/lib
+
+make -f ins_rdbms.mk uniaud_on ioracle
+
+-------------4) RESTART LISTENER AND ORACLE SERVICE---------------------
+
+>lsnrctl start
+>net start OracleService[SID]
+
+---------------5) RESTART DATABASE------------------
+
+STARTUP 
+
+---------VERIFY THE UNIFIED AUDITING HAS BEEN ENABLED------
+SELECT value
+FROM v$option 
+WHERE parameter = 'Unified Auditing';
+
+###############################################################################
+#CREATING AN AUDIT POLICY
+#################################################################################
+
+-----------------------VIEWING UNIFIED AUDIT POLICIES ON SCHEMA OBJECTS----------------------------------
+
+-- Report on auditing policies belonging to a schema 
+
+SET LIN 120
+SET PAGESIZE 100
+COLUMN policy_name FORMAT A20
+COLUMN audit_option FORMAT A20
+COLUMN object_schema FORMAT A20
+COLUMN object_name FORMAT A20
+
+SELECT policy_name, audit_option, object_schema, object_name
+FROM audit_unified_policies
+WHERE object_schema = 'KPS'
+ORDER BY object_name;
+
+------------------------------VIEW ENABLED UNIFIED AUDIT POLICIES-------------
+
+COLUMN policy_name FORMAT A20
+COLUMN user_name FORMAT A20
+COLUMN success FORMAT A8
+COLUMN failure FORMAT A8
+
+SELECT user_name, policy_name, enabled_opt, enabled_option, success, failure
+FROM audit_unified_enabled_policies
+WHERE policy_name = 'AUDIT_OBJPRIV_GRADE';
+
+-- TO enable a unified audit policy for all users
+
+AUDIT POLICY table_pol;
+
+-- TO enable a unified audit policy only for the users hr and sh
+
+AUDIT POLICY dml_pol BY hr, sh;
+
+-- Disable audit policy for all users
+
+NOAUDIT POLICY table_pol;
+
+---------------------CREATING AUDIT POLICY ON OBJECT PRIVILEGES---------------------
+CREATE AUDIT POLICY audit_objpriv_kps
+ACTIONS delete on KPS.KPS_ADDRESS, 
+        update on KPS.KPS_ADDRESS,
+        delete on KPS.KPS_INCIDENT,
+        update on KPS.KPS_INCIDENT,
+        delete on KPS.KPS_PERSON,
+        update on KPS.KPS_PERSON,
+        delete on KPS.KPS_PERSON_ROLE,
+        update on KPS.KPS_PERSON_ROLE,
+        delete on KPS.KPS_POLICE, 
+        update on KPS.KPS_POLICE,
+	delete on KPS.KPS_POLICE_ROLE, 
+        update on KPS.KPS_POLICE_ROLE,
+        delete on KPS.KPS_VEHICLE,
+        update on KPS.KPS_VEHICLE,
+	delete on KPS.KPS_VEHICLE_ROLE,
+        update on KPS.KPS_VEHICLE_ROLE
+
+
+-------------------------TO FLUSH AUDIT TRAIL------------------------------------
+-- flush audit trail to disk so it can read from the unifed_adit_trail data dictionary view
+exec dbms_audit_mgmt.flush_unified_audit_trail;
+
+OR
+
+-- run the following script from a a script file
+
+BEGIN
+  DBMS_AUDIT_MGMT.CLEAN_AUDIT_TRAIL(
+   AUDIT_TRAIL_TYPE           =>  DBMS_AUDIT_MGMT.AUDIT_TRAIL_UNIFIED,
+   USE_LAST_ARCH_TIMESTAMP    =>  TRUE,
+   CONTAINER                  =>  DBMS_AUDIT_MGMT.CONTAINER_CURRENT );
+END;
+/
+
+------------------------------------------------------------
+-- read audit records in unified_audit_trail data dictionary view
+
+SET PAGES 999 LINES 300
+COLUMN unified_audit_policies FORMAT A25
+COLUMN object_name FORMAT A15
+COLUMN action FORMAT A12
+COLUMN object_schema FORMAT A15
+COLUMN dbusername FORMAT A10
+COLUMN os_username FORMAT A12
+COLUMN event_date FORMAT A25
+
+SELECT unified_audit_policies, 
+       action_name AS action, 
+       dbusername, 
+       os_username,
+       object_name, 
+       object_schema,
+       TO_CHAR(event_timestamp, 'YYYY-MON-DD HH24:MI:SS') AS event_date
+FROM unified_audit_trail
+WHERE unified_audit_policies = 'AUDIT_OBJPRIV_GRADE';
+
+--------------CHECK TO SEE ENABLED AUDIT POLICIES 
+

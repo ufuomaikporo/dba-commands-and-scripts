@@ -1,0 +1,501 @@
+
+###################################################################################
+# RMAN BACKUPS
+###################################################################################
+
+NOTES**: You can make full, full-level-0, incremental-level-1 and cummulative-level-1 backups for 
+database, datafile and tablespace backups
+
+LEVEL 0 backup: is a base level full backup to be used as part of a incremental backup strategy 
+cmd: BACKUP AS [COPY | COMPRESSED BACKUPSET] INCREMENTAL LEVEL 0 
+	 TAG 'tag'
+	 [DATABASE | DATAFILE | TABLESPACE tablespace_name1, tablespace_name2]
+
+LEVEL 1 differential: is a backup on top of a LEVEL 0 backup that captures any changes since the last LEVEL 0 or LEVEL 1 backup
+cmd: BACKUP INCREMENTAL LEVEL 1 
+	 TAG 'tag'
+	 [DATABASE | DATAFILE | TABLESPACE tablespace_name1, tablespace_name2]
+
+LEVEL 1 cummulative: is a backup on top of a LEVEL 0 backup that captures any changes since the last LEVEL 0, for the purpose of
+					speeding up recovery as opposed to recoverying with multiple differential backups and a LEVEL 0, you can recovery 
+					with 1 cummulative and the LEVEL 0.
+cmd: BACKUP INCREMENTAL LEVEL 1 CUMMULATIVE 
+	 TAG 'tag'
+	 [DATABASE | DATAFILE | TABLESPACE tablespace_name1, tablespace_name2]
+
+---------------------------------- CHECK BACKUP HISTORY ------------------------------------
+
+-- Check backup history in RMAN catalog
+
+COL status FORMAT A10
+COL hrs FORMAT 999.99
+
+SELECT session_key, 
+	   input_type, status,
+	   to_char(START_TIME,'mm/dd/yy hh24:mi') start_time,
+	   to_char(END_TIME,'mm/dd/yy hh24:mi') end_time,
+	   elapsed_seconds/3600 hrs 
+FROM V$RMAN_BACKUP_JOB_DETAILS
+ORDER BY session_key;
+
+-----------------------View report on backups------------------------------------
+
+LIST BACKUP OF [DATABASE | DATAFILE #filenumber | TABLESPACE tablespace_name | ARCHIVELOG ALL | CONTROLFILE | SPFILE ];
+
+-- For a summary
+
+LIST BACKUP SUMMARY;
+
+-List backups with a particular tag or backupset key (BS Key)
+
+LIST BACKUPSET [TAG 'tag' | BS_key] 
+
+---------------------View a report on the database structure---------------------
+
+-- data files and tempfiles ONLY
+
+REPORT SCHEMA
+
+-----------------------------Show obsolete backups-------------------------------
+
+--Obselete backups are backups that are not needed to meet backup retention policy requirements
+
+REPORT OBSOLETE;
+
+-----------------------Delete obsolete backups----------------------------
+
+-- Deletes backups that do not fit within the recovery window setting in RMAN (Based on Retention policy)
+
+DELETE OBSOLETE;
+
+-------------------------Verify if backup files are still on disk------------------
+
+-- Updates the RMAN repository and marks files that are found as 'Available' and files that are not found as 'Expired'
+-- if a file is accidentally deleted, it can be placed back and the crosscheck can
+be ran again. If the file is found, it will change it's label to 'Available'
+
+-- You can use CROSSCHECK in conjunction with DELETE EXPIRED BACKUP command to remove orphaned backup metadata from the RMAN repository
+
+CROSSCHECK BACKUP|ARCHIVELOG ALL|COPY;
+
+-------------Delete files marked as 'Expired' by CROSSCHECK--------------------
+
+-- Deletes from the RMAN catalog backups that cannot be found on disk (orphaned files)
+
+DELETE [NOPROMPT] EXPIRED [BACKUP| ARCHIVELOG ALL| COPY ];
+
+---------------------configure automatic backup of control file and spfile-------------
+
+CONFIGURE CONTROLFILE AUTOBACKUP ON;
+
+---------------------------------FULL Database Backup ---------------------------------
+
+
+- backup set is the default backup type unless AS COPY is specified. Backupsets are faster
+  backups, but take longer to restore
+- FULL (datafiles and control files) backup is the default unless INCREMENTAL is specified
+- You cannot backup the TEMP tablespace
+
+
+BACKUP DATABASE | TABLESPACE tablespace_name | DATAFILE #filenumber
+
+----------------------Include archive log files in FULL backupset backup------------------
+
+BACKUP DATABASE PLUS ARCHIVELOG;
+
+-------------------------Image copy backup-----------------------------------
+
+-- image copy backup of datafiles and control file plus spfile if autobackup is configured)
+-- includes command to backup archived redo logs
+
+BACKUP AS COPY DATABASE PLUS ARCHIVELOG;
+
+-------------------delete the archive log in FRA after backing it up---------------
+
+-- could be done as backup set
+
+BACKUP AS COPY DATABASE PLUS ARCHIVELOG DELETE INPUT
+
+---------------------Backup just one pluggable database---------------------------
+
+BACKUP PLUGGABLE DATABASE PDB1;
+
+-----------------------backup a tablspace within a pdb-------------------------
+
+-- **Note RMAN does not backup temp tablespaces
+-- applies when connected to the root container
+
+BACKUP TABLESPACE PDB1:USERS
+
+-------------------------Backup up a previous image copy backup-------------------
+
+-- can be an image copy or a backup set
+-- can include option to make the backup an image copy backup of the image copy backup
+
+BACKUP COPY OF DATABASE;
+
+---------------------------------- BACKUP RECOVERY AREA FILES --------------------------
+
+NOTES**: 
+1. Backup optimization should be set to on so only files that have not been backed up to the specified device type will be backed up
+2. When performing back to disk, only those backup recovery area files that have not been backed up to disk will be copied. 
+	In otherwords it won't do anything if the Fast recvoery area is already on disk and backup optimization is set to ON
+3. Location specifed must be a file directory
+
+-- backup up flash recvoery area files
+
+BACKUP RECOVERY AREA TO DESTINATION '/u02/app/oracle';
+
+BACKUP DB_RECOVERY_FILE_DEST TO DESTINATION '/u02/app/oracle';
+
+-- To backup the RMAN backup files to another disk location regardless of duplication
+
+BACKUP RECOVERY FILES TO DESTINATION 'C:\Users\Ufuoma_Ikporo\DeleteMe\%d_%M_%D_%Y_%U';
+
+-------------------------------- CHECK FOR CORRUPTION -------------------------------
+
+-- Check for physical corruption in database, tablespace or datafile
+
+VALIDATE [DATABASE | TABLESPACE tablespace_name | DATAFILE #filenumber];
+
+-- Check for physical and logical corruption
+
+VALIDATE CHECK LOGICAL DATABASE | TABLESPACE tablespace_name | DATAFILE #filenumber;
+
+##################################################################################
+Incremental Backups
+###################################################################################
+
+-------------------------------Level 0 (base) backup------------------------------
+
+-- can specify 'AS COPY' for image copy, other is a backup set
+
+BACKUP INCREMENTAL LEVEL 0 DATABASE | TABLESPACE tablespace_name | DATAFILE #filenumber;
+
+--------------------------Level 1 differnetial backup---------------------------------
+
+-- level 1 backups are always backup sets
+-- differential backup is a backup of changed data blocks since last 
+    level 0 or 1 backup
+-- faster backup than cummulative level 1 backup, but with slower recovery
+
+BACKUP INCREMENTAL LEVEL 1 DATABASE | TABLESPACE tablespace_name | DATAFILE #filenumber;
+
+---------------------------Level 1 cumulative backup-----------------------------
+
+-- larger and slower backup than differential backup, but with a faster recovery
+
+BACKUP INCREMENTAL LEVEL 1 CUMULATIVE DATABASE | TABLESPACE tablespace_name | DATAFILE #filenumber;
+
+##########################################################################################
+ARCHIVE LOG BACKUPS
+###########################################################################################
+
+---------------------------------- ARCHIVE REDO LOG DELETION POLICY ------------------
+
+CONFIGURE ARCHIVELOG DELETION POLICY TO BACKED UP 2 TIMES TO DEVICE TYPE DISK;
+
+-- The following command creates a copy image archival backup that is stored indefinitely 
+-- KEEP FOREVER requires the existence of a recovery catalog
+
+BACKUP AS COPY DATABASE PLUS ARCHIVELOG KEEP FOREVER; 
+
+-- -- Archive log backups cannot be stored in the FRA because the FRA is managed by the oracle 
+  server based on a retention policy, while archival backups are exempt from the 
+  retention policy
+-- The following command creates an archival backupset backup that is stored in the 
+   specified location for 30 days
+-- The tag can used to reference this backup using other commands 
+    (ie LIST BACKUP SUMMARY TAG 'COURSE END';)
+
+RUN {BACKUP DATABASE PLUS ARCHIVELOG FORMAT
+'C:\StartingPoint\RMAN\%u.bkp' TAG 'Course End' KEEP UNTIL TIME 'SYSDATE + 30';
+}
+
+-- backup the archive log ONLY
+
+BACKUP ARCHIVELOG ALL;
+
+-- backup archive logs within a specific timespan and delete all archive logs (from all archive log destinations)
+-- created within the last week
+
+RUN
+{
+  ALLOCATE CHANNEL c2 DEVICE TYPE sbt 
+    PARMS='NSR_DATA_VOLUME_POOL=ARCHIVELOG_POOL_2';
+  BACKUP ARCHIVELOG
+    FROM TIME 'SYSDATE-1'
+    UNTIL TIME 'SYSDATE'; 
+# specify UNTIL so RMAN does not archive current log
+}
+# Delete old logs - for example, delete logs created within the last week. 
+DELETE ARCHIVELOG ALL COMPLETED AFTER 'SYSDATE-7';
+
+####################################################################################
+CREATE SCRIPT PLUS OFFLINE/COLD BACKUPS 
+#####################################################################################
+
+CREATE SCRIPT coldbackup { 
+ SHUTDOWN IMMEDIATE;
+ STARTUP MOUNT; 
+ BACKUP
+ DEVICE TYPE DISK  
+ FORMAT 'C:\Program Files\Microsoft SQL Server\MSSQL15.MSSQLSERVER\MSSQL\Backup\%d.bkp' 
+ KEEP UNTIL TIME '2022-03-15'  
+ RESTORE POINT 'BEFORE_INCARNATION'  
+ TAG='COLD_FULL_DB_BACKUP'
+ DATABASE;  	
+ ALTER DATABASE OPEN; 
+} 
+
+-- Makes a Backupset backup of Datafiles and archive log files with in the E drive
+    with the given file name format specifier
+
+RUN {
+STARTUP MOUNT 
+BACKUP FORMAT 'E:\BACKUPS\ORANT12C\HOT_backup\u%_%s.bkp'
+DATABASE PLUS ARCHIVELOG; 
+SHUTDOWN IMMEDIATE 
+}
+EXIT 
+
+
+
+#####################################################################################################
+# ONLINE/HOT INCREMENTAL BACKUPS
+########################################################################################################
+
+Channels and Parallelism
+	-- each allocated channel establishes a connection between RMAN and the Oracle instance 
+	-- Using parallelism in conjunction with multiple allocated channels speeds up backup
+	-- The degree of parallelism should be equal to the number of cpu cores on server
+
+--------------------------------------------- CONFIGURE PERSISTENT RMAN SETTINGS -------------------------------
+-- The ARCHIVELOG DELETION POLICY below persistently sets archived logs to be deleted if it is backed up twice to disk 
+-- CONTROLFILE AUTOBACKUP ON automatically backs up the control file and spfile after every RMAN backup or after database structual changes 
+	The control file autobackup contains metadata about the previous backup, which is crucial for disaster recovery.
+-- Backups that are not required for a point-in-time recovery within the RECOVERY WINDOW are marked as obselete and can be deleted with the 
+	DELETE OBSELETE command
+
+CONFIGURE RETENTION POLICY TO RECOVERY WINDOW OF 7 DAYS;
+CONFIGURE BACKUP OPTIMIZATION ON;
+CONFIGURE CONTROLFILE AUTOBACKUP ON;
+CONFIGURE MAXSETSIZE TO UNLIMITED;
+CONFIGURE CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO '\\backups.cgy.dynamicrisk.net\DB_Backups_Nightly\ORA19C\Nightly\Test\ControlFile&SPFile_%F';
+CONFIGURE DEVICE TYPE DISK PARALLELISM 4;
+CONFIGURE ARCHIVELOG DELETION POLICY TO BACKED UP 2 TIMES TO DISK;
+
+----------------------------------------------- BACKUP COMMAND PARAMETERS -------------------------------------------
+
+-- CHECK LOGICAL checks for logical corruption
+-- PLUS ARCHIVELOG does the following
+	1) Runs the ALTER SYSTEM ARCHIVE LOG CURRENT statement.
+	2) Runs BACKUP ARCHIVELOG ALL. If backup optimization is enabled, then RMAN skips logs that it has already backed up to the specified device.
+	3) Backs up the rest of the files specified in the BACKUP command.
+	4) Runs the ALTER SYSTEM ARCHIVE LOG CURRENT statement.
+	5) Backs up any remaining archived logs generated during the backup. If backup optimization is not enabled, then RMAN backs up the logs generated in Step 1 plus all the logs generated during the backup.
+-- DELETE ALL INPUT deletes each backed-up archived redo log file from all log archiving destinations.
+
+----------------------------------------------- INCREMENTAL LEVEL 0 (Base Full Backup)BACKUP COMMAND ---------------------------------------------
+https://docs.oracle.com/cd/B19306_01/backup.102/b14192/bkup004.htm
+https://docs.oracle.com/en/database/oracle/oracle-database/21/bradv/rman-backup-concepts.html#GUID-0E273817-1EE0-40FD-BD92-51C4A0CAAF79
+https://docs.oracle.com/en/database/oracle/oracle-database/21/bradv/rman-backup-concepts.html#GUID-0E273817-1EE0-40FD-BD92-51C4A0CAAF79
+
+RUN
+{
+	# Set backup location and filename for controlfile and spfile backup within the run-block 
+	SET CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO 'B:\Backup\ControlFile_n_SPFile_%F';
+
+	# Allocate 4 channels for parallel processes to run operations within the run-block. and set the location and file name for backupsets
+	ALLOCATE CHANNEL ch1 DEVICE TYPE DISK FORMAT = 'B:\Fast Recovery Area\ORA19C22\Backups\%d_%M_%D_%Y_%U' MAXPIECESIZE 10G;
+	ALLOCATE CHANNEL ch2 DEVICE TYPE DISK FORMAT = 'B:\Fast Recovery Area\ORA19C22\Backups\%d_%M_%D_%Y_%U' MAXPIECESIZE 10G;
+	ALLOCATE CHANNEL ch3 DEVICE TYPE DISK FORMAT = 'B:\Fast Recovery Area\ORA19C22\Backups\%d_%M_%D_%Y_%U' MAXPIECESIZE 10G;
+	ALLOCATE CHANNEL ch4 DEVICE TYPE DISK FORMAT = 'B:\Fast Recovery Area\ORA19C22\Backups\%d_%M_%D_%Y_%U' MAXPIECESIZE 10G;
+	
+	# Backup the tablespaces listed and the archive log files, then delete the archive log files (based on archivelog deletion policy)
+	# from all archive log locations. Add a tag to both the archive log backup and database backup
+	BACKUP AS COMPRESSED BACKUPSET 
+	INCREMENTAL LEVEL 0
+	TABLESPACE Users, Index TAG 'Full_backup'
+	PLUS ARCHIVELOG
+	DELETE ALL INPUT TAG 'Full_backup';
+	
+	# release the processing channels 
+	RELEASE CHANNEL ch1;
+	RELEASE CHANNEL ch2;
+	RELEASE CHANNEL ch3;
+	RELEASE CHANNEL ch4;
+}
+
+RUN
+{
+	SET CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO 'B:\NightlyBackup\ControlFile_n_SPFile_%F.BKP';
+	ALLOCATE CHANNEL ch1 DEVICE TYPE DISK MAXPIECESIZE 10G;
+	ALLOCATE CHANNEL ch2 DEVICE TYPE DISK MAXPIECESIZE 10G;
+	ALLOCATE CHANNEL ch3 DEVICE TYPE DISK MAXPIECESIZE 10G;
+	ALLOCATE CHANNEL ch4 DEVICE TYPE DISK MAXPIECESIZE 10G;	 
+	BACKUP AS COMPRESSED BACKUPSET   # Create 3 copies of a compressed backupset to specified locations after FORMAT keyword
+	COPIES 3 FORMAT 'B:\NightlyBackup\%d_%M_%D_%Y_%U.BKP', 
+					'D:\WeeklyBackup\%d_%M_%D_%Y_%U.BKP', 
+					'E:\MonthlyBackup\%d_%M_%D_%Y_%U.BKP'
+	INCREMENTAL LEVEL 0   #backups are level 0 backups (Base FULL backups)
+	TABLESPACE Tablespace1, Tablespace2 TAG 'New_FULL_Backup'             
+	PLUS ARCHIVELOG TAG 'New_FULL_Backup'  #include archivelog in backup
+	DELETE ALL INPUT;    #delete archive log after backup
+	VALIDATE CHECK LOGICAL TABLESPACE Tablespace1, Tablespace2 ;  # check that 
+	RELEASE CHANNEL ch1;
+	RELEASE CHANNEL ch2;
+	RELEASE CHANNEL ch3;
+	RELEASE CHANNEL ch4;
+}
+
+-------------------------------------- INCREMENTAL LEVEL 1 (CUMULATIVE BACKUP) ------------------------------------
+
+-- Backup all changes since last level 0 (takes longer and takes up more space than a differential backup)
+
+RUN
+{
+	# Set backup location and filename for controlfile and spfile backup within the run-block 
+	SET CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO 'B:\Backup\ControlFile_n_SPFile_%F';
+
+	# Allocate 4 channels for parallel processes to run operations within the run-block. and set the location and file name for backupsets
+	ALLOCATE CHANNEL ch1 DEVICE TYPE DISK FORMAT = 'B:\Fast Recovery Area\ORA19C22\Backups\%d_%M_%D_%Y_%U' MAXPIECESIZE 10G;
+	ALLOCATE CHANNEL ch2 DEVICE TYPE DISK FORMAT = 'B:\Fast Recovery Area\ORA19C22\Backups\%d_%M_%D_%Y_%U' MAXPIECESIZE 10G;
+	ALLOCATE CHANNEL ch3 DEVICE TYPE DISK FORMAT = 'B:\Fast Recovery Area\ORA19C22\Backups\%d_%M_%D_%Y_%U' MAXPIECESIZE 10G;
+	ALLOCATE CHANNEL ch4 DEVICE TYPE DISK FORMAT = 'B:\Fast Recovery Area\ORA19C22\Backups\%d_%M_%D_%Y_%U' MAXPIECESIZE 10G;
+
+	# Backup the tablespaces listed and the archive log files, then delete the archive log files (based on archivelog deletion policy)
+	# from all archive log locations. Add a tag to both the archive log backup and database backup
+	BACKUP AS COMPRESSED BACKUPSET 
+	INCREMENTAL LEVEL 1 CUMULATIVE
+	TABLESPACE Users, Index TAG 'Cumulative_Backup'             
+	PLUS ARCHIVELOG
+	DELETE ALL INPUT TAG 'Cumulative_Backup';
+
+	#check for physical and logical corruption within the tablespaces listed
+	VALIDATE CHECK LOGICAL TABLESPACE Users, Index;
+
+	# release the processing channels 
+	RELEASE CHANNEL ch1;
+	RELEASE CHANNEL ch2;
+	RELEASE CHANNEL ch3;
+	RELEASE CHANNEL ch4;
+}
+
+
+----------------------------------------- INCREMENTAL LEVEL 1 (DIFFERENTIAL BACKUP) --------------------------------------
+
+-- Backup all changes amde since last level 0 or level 1 
+
+RUN
+{
+	# Set backup location and filename for controlfile and spfile backup within the run-block 
+	SET CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO 'B:\Backup\ControlFile_n_SPFile_%F';
+
+	# Allocate 4 channels for parallel processes to run operations within the run-block. and set the location and file name for backupsets
+	ALLOCATE CHANNEL ch1 DEVICE TYPE DISK FORMAT = 'B:\Fast Recovery Area\ORA19C22\Backups\%d_%M_%D_%Y_%U' MAXPIECESIZE 10G;
+	ALLOCATE CHANNEL ch2 DEVICE TYPE DISK FORMAT = 'B:\Fast Recovery Area\ORA19C22\Backups\%d_%M_%D_%Y_%U' MAXPIECESIZE 10G;
+	ALLOCATE CHANNEL ch3 DEVICE TYPE DISK FORMAT = 'B:\Fast Recovery Area\ORA19C22\Backups\%d_%M_%D_%Y_%U' MAXPIECESIZE 10G;
+	ALLOCATE CHANNEL ch4 DEVICE TYPE DISK FORMAT = 'B:\Fast Recovery Area\ORA19C22\Backups\%d_%M_%D_%Y_%U' MAXPIECESIZE 10G;
+
+	# Backup the tablespaces listed and the archive log files, then delete the archive log files (based on archivelog deletion policy)
+	#from all archive log locations. Add a tag to both the archive log backup and database backup
+	BACKUP AS COMPRESSED BACKUPSET 
+	INCREMENTAL LEVEL 1
+	DATABASE TAG 'Daily_Differential_Backup'
+	PLUS ARCHIVELOG
+	DELETE ALL INPUT TAG 'Daily_Differential_Backup';
+
+	# release the processing channels 
+	RELEASE CHANNEL ch1;
+	RELEASE CHANNEL ch2;
+	RELEASE CHANNEL ch3;
+	RELEASE CHANNEL ch4;
+}
+
+
+
+------------------------------------------- INCREMENTALLY BACKUP STRATEGY COMMAND ----------------------------
+
+HOW IT WORKS: Creates a level 0 image copy full backup the first time it runs, creates a level 1 differential backup the second time it runs
+	on the 3rd time going forwared it uses the previous level 1 backup to update/roll-forward the image copy backup 
+	then performs a new level 1 differential backup
+
+-- Image copy backups take up more space than compressed backupsets so make sure there is enough space in the location chosen.
+	It's best to make the image copy backup then convert it into compressed backupset to tape
+	
+1) -- The following provides fast recoverability within 24 hours if the script is ran daily
+
+RUN
+{
+	ALLOCATE CHANNEL c1 DEVICE TYPE DISK FORMAT '\\backups.cgy.dynamicrisk.net\DB_Backups_Nightly\ORA19C\Nightly\Test\%d_%I_%M_%D_%Y_%U' MAXPIECESIZE 3G;
+	ALLOCATE CHANNEL c2 DEVICE TYPE DISK FORMAT '\\backups.cgy.dynamicrisk.net\DB_Backups_Nightly\ORA19C\Nightly\Test\%d_%I_%M_%D_%Y_%U' MAXPIECESIZE 3G;
+	ALLOCATE CHANNEL c3 DEVICE TYPE DISK FORMAT '\\backups.cgy.dynamicrisk.net\DB_Backups_Nightly\ORA19C\Nightly\Test\%d_%I_%M_%D_%Y_%U' MAXPIECESIZE 3G;
+	ALLOCATE CHANNEL c4 DEVICE TYPE DISK FORMAT '\\backups.cgy.dynamicrisk.net\DB_Backups_Nightly\ORA19C\Nightly\Test\%d_%I_%M_%D_%Y_%U' MAXPIECESIZE 3G;
+
+	RECOVER COPY OF DATABASE 
+	WITH TAG 'incr_update';
+	
+	BACKUP 
+	INCREMENTAL LEVEL 1 
+	CHECK LOGICAL 
+	FOR RECOVER OF COPY WITH TAG 'incr_update'
+	DATABASE PLUS ARCHIVELOG
+	DELETE ALL INPUT;
+	
+	RELEASE CHANNEL c1;
+	RELEASE CHANNEL c2;
+	RELEASE CHANNEL c3;
+	RELEASE CHANNEL c4;
+}
+
+
+2) -- UNTIL TIME 'SYSDATE - 7' will provide fast recoverability within 7 days if ran daily
+
+RUN
+{
+	ALLOCATE CHANNEL c1 DEVICE TYPE DISK FORMAT '\\backups.cgy.dynamicrisk.net\DB_Backups_Nightly\ORA19C\Nightly\Test\%d_%I_%M_%D_%Y_%U' MAXPIECESIZE 3G;
+	ALLOCATE CHANNEL c2 DEVICE TYPE DISK FORMAT '\\backups.cgy.dynamicrisk.net\DB_Backups_Nightly\ORA19C\Nightly\Test\%d_%I_%M_%D_%Y_%U' MAXPIECESIZE 3G;
+	ALLOCATE CHANNEL c3 DEVICE TYPE DISK FORMAT '\\backups.cgy.dynamicrisk.net\DB_Backups_Nightly\ORA19C\Nightly\Test\%d_%I_%M_%D_%Y_%U' MAXPIECESIZE 3G;
+	ALLOCATE CHANNEL c4 DEVICE TYPE DISK FORMAT '\\backups.cgy.dynamicrisk.net\DB_Backups_Nightly\ORA19C\Nightly\Test\%d_%I_%M_%D_%Y_%U' MAXPIECESIZE 3G;
+
+	RECOVER COPY OF DATABASE 
+	WITH TAG 'incr_update' 
+	UNTIL TIME 'SYSDATE - 7';
+	
+	BACKUP
+	INCREMENTAL LEVEL 1 
+	CHECK LOGICAL 
+	FOR RECOVER OF COPY WITH TAG 'incr_update'
+	DATABASE PLUS ARCHIVELOG
+	DELETE ALL INPUT;
+	
+	RELEASE CHANNEL c1;
+	RELEASE CHANNEL c2;
+	RELEASE CHANNEL c3;
+	RELEASE CHANNEL c4;
+}
+
+------------------------------------------------------- ALLOCATE TO SPECIFIC TASKS ------------------------------------
+
+RMAN> RUN
+{
+  ALLOCATE CHANNEL ch1 DEVICE TYPE DISK FORMAT = '/backup/df/%U';
+  ALLOCATE CHANNEL ch2 DEVICE TYPE DISK FORMAT = '/backup/cf/%U';
+  ALLOCATE CHANNEL ch3 DEVICE TYPE sbt;
+  BACKUP AS BACKUPSET # all output files are in backup sets
+    # channel ch1 backs up datafiles to /backup/df directory
+    DATAFILE 1,2,3,4 
+    CHANNEL ch1
+    # channel ch2 backs up control file copy to /backup/cf directory
+    CONTROLFILECOPY '/tmp/control01.ctl'
+    CHANNEL ch2;
+  BACKUP AS BACKUPSET
+    # channel ch3 backs up archived redo logs to tape
+    ARCHIVELOG FROM TIME 'SYSDATE-14'
+    CHANNEL ch3;
+}
+
+
+
+

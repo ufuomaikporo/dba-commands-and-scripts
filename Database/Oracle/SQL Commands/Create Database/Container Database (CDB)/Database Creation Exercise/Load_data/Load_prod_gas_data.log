@@ -1,0 +1,81 @@
+
+SQL*Loader: Release 12.2.0.1.0 - Production on Tue Mar 15 17:52:51 2022
+
+Copyright (c) 1982, 2017, Oracle and/or its affiliates.  All rights reserved.
+
+Control File:   C:\DBA\Exam\Load_data\Load_prod_gas_data.ctl
+Data File:      C:\DBA\Exam\Load_data\Examdata2021.csv
+  Bad File:     C:\DBA\Exam\Load_data\Load_prod_gas_data.bad
+  Discard File: C:\TXPDB\C_Drive\scripts\Loading_tables\payment\Load_prod_gas_data.dsc 
+ (Allow all discards)
+
+Number to load: ALL
+Number to skip: 1
+Errors allowed: 2000
+Bind array:     64 rows, maximum of 256000 bytes
+Continuation:    none specified
+Path used:      Conventional
+
+Table PRODUCTION, loaded from every logical record.
+Insert option in effect for this table: APPEND
+TRAILING NULLCOLS option in effect
+
+   Column Name                  Position   Len  Term Encl Datatype
+------------------------------ ---------- ----- ---- ---- ---------------------
+UWI                                 FIRST     *   ,  O(") CHARACTER            
+ZONE_ID                              NEXT     *   ,  O(") CHARACTER            
+PROD_DATE                            NEXT     *   ,  O(") DATE MON-YY          
+OIL_M3                               NEXT     *   ,  O(") CHARACTER            
+  (FILLER FIELD)
+OIL_BBL                              NEXT     *   ,  O(") CHARACTER            
+  (FILLER FIELD)
+PROD_AMT                             NEXT     *   ,  O(") CHARACTER            
+GAS_MCF                              NEXT     *   ,  O(") CHARACTER            
+  (FILLER FIELD)
+WATER_M3                             NEXT     *   ,  O(") CHARACTER            
+  (FILLER FIELD)
+WATER_BBL                            NEXT     *   ,  O(") CHARACTER            
+  (FILLER FIELD)
+COND_M3                              NEXT     *   ,  O(") CHARACTER            
+  (FILLER FIELD)
+COND_BBL                             NEXT     *   ,  O(") CHARACTER            
+  (FILLER FIELD)
+HOURS                                NEXT     *   ,  O(") CHARACTER            
+LE                                   NEXT     *   ,  O(") CHARACTER            
+  (FILLER FIELD)
+LSD                                  NEXT     *   ,  O(") CHARACTER            
+  (FILLER FIELD)
+SEC                                  NEXT     *   ,  O(") CHARACTER            
+  (FILLER FIELD)
+TWP                                  NEXT     *   ,  O(") CHARACTER            
+  (FILLER FIELD)
+RGE                                  NEXT     *   ,  O(") CHARACTER            
+  (FILLER FIELD)
+MER                                  NEXT     *   ,  O(") CHARACTER            
+  (FILLER FIELD)
+ES                                   NEXT     *   ,  O(") CHARACTER            
+  (FILLER FIELD)
+PROD_TYPE                                                 CONSTANT
+    Value is '2'
+
+
+Table PRODUCTION:
+  489 Rows successfully loaded.
+  0 Rows not loaded due to data errors.
+  0 Rows not loaded because all WHEN clauses were failed.
+  0 Rows not loaded because all fields were null.
+
+
+Space allocated for bind array:                  82688 bytes(64 rows)
+Read   buffer bytes: 1048576
+
+Total logical records skipped:          1
+Total logical records read:           489
+Total logical records rejected:         0
+Total logical records discarded:        0
+
+Run began on Tue Mar 15 17:52:51 2022
+Run ended on Tue Mar 15 17:52:51 2022
+
+Elapsed time was:     00:00:00.12
+CPU time was:         00:00:00.05

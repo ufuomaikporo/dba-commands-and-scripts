@@ -1,0 +1,58 @@
+-- Insert the StationSeries record back into new StationSeries table
+SET IDENTITY_INSERT StationSeries ON
+
+INSERT INTO dbo.StationSeries
+(
+    Id,
+    PriorOId,
+    StationSeriesName,
+    StationSeriesAltName,
+    LineId,
+    EffectiveStartDate,
+    EffectiveEndDate,
+    BeginStationNum,
+    EndStationNum,
+    SeriesValueNumber,
+    FactorNum,
+    MultiplierNum,
+    PrevId,
+    NextId,
+    Remarks,
+    SourceTypeGLd,
+    CreatedDate,
+    CreatedUser,
+    LastModDatetime,
+    LastModByUserId,
+    PointCollection,
+    SourceId,
+	SpatialOid
+)
+
+SELECT s.Id,
+    s.PriorOId,
+    s.StationSeriesName,
+    s.StationSeriesAltName,
+    s.LineId,
+    s.EffectiveStartDate,
+    s.EffectiveEndDate,
+    s.BeginStationNum,
+    s.EndStationNum,
+    s.SeriesValueNumber,
+    s.FactorNum,
+    s.MultiplierNum,
+    s.PrevId,
+    s.NextId,
+    s.Remarks,
+    s.SourceTypeGLd,
+    s.CreatedDate,
+    s.CreatedUser,
+    s.LastModDatetime,
+    s.LastModByUserId,
+    s.PointCollection,
+    s.Id,
+	sp.OBJECTID
+	FROM dbo.STATIONSERIESCOPY s
+	INNER JOIN dbo.STATIONPOLYLINE sp ON s.Id = sp.StationSeriesId
+	WHERE ID NOT IN (SELECT s2.Id FROM dbo.STATIONSERIES s2)
+
+SET IDENTITY_INSERT StationSeries OFF

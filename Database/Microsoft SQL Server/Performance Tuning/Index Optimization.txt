@@ -1,0 +1,97 @@
+##############################################################################
+# INDEX OPTIMIZATION
+##############################################################################
+
+----------------------------------- ABOUT INDEXES -------------------------------
+- There is a cost/reward to adding indexes
+
+- Each added index increases
+	- disk space usage
+	- IO cost for INSERTS, DELETES and sometimes UPDATES 
+		(inserts and deletes affect all columns contained in index pages and table pages while updates may not touch columns in index pages)
+	- backup time/duration
+	- CHECK DB time/duration
+	- update jobs and maintenance jobs
+	  
+- Try to avoid indexing columns with data that changes frequently if possible (HOT columns)
+
+- adding an index allows for execution plans with index seeks rather than tables scans, which in some instances
+   means fewer logical reads and cpu usage, making it faster
+
+- The table primary key is automatically added to any created non-clustered index (Does not need to be included in index definition).
+	SQL Server does do so to perform joins to the clustered index table (main table) for key-lookups
+
+- if a query includes any column that is not mentioned in an index being used for the query, it will perform a key-lookup on the 
+	clustered index table to for those columns. if the number of key-lookups is high, this can be more expensive than a table scan
+
+- Less columns in an index equals less benefits, quereies need more than 1-2 columns, up to 5 columns in good. But
+  more columns means higher overhead (bigger index, longer maintenance jobs, blocking)
+  
+- INCLUDE columns are automatically better than adding more columns to the index key list
+
+------------------------------------- INDEX KEYS ------------------------------
+
+- The first 1 or 2 columns in an index key are very important (ORDER matters). The combination should be unique
+	within the index
+
+- Columns in WHERE/GROUP/JOIN/ORDER are often good candidates for index keys
+
+- Columns in the SELECT good candidates for INCLUDE caluse in an index. in many instances
+	it makes no difference if these columns are added at the end of the index key list
+
+------------------------------- YOU MAY HAVE TOO MANY INDEXES IF --------------------------
+
+People complain about slow inserts and deletes (particularly in data warehouses)
+- Monitoring tools warn about blocking and deadlocks during inserts and deletes
+- If you want to reduce the size of the database, deleting some indexes might be a start
+- generally you should have about 5 indexes per table, if more than five start to ask questions
+
+----------------------------- YOU MAY NOT HAVE ENOUGH INDEXES IF
+
+- People complain about slow selects (but not about inserts and deletes)
+- You and can cache a lot of the database in memory 
+
+--------------------------------------- STATISITICS ---------------------------------------------
+
+- SQL Server automatically creates statistics on table for each index that is created. That statistic is named after the index
+- Query execution plans are based on these statistics so outdated stats or porrly sampled stats can lead to poor execution plans 
+	and therefore poor performance
+
+------------------------------- CLUSTERED INDEX ---------------------------------
+
+- Clustered indexes are automatically created on primary key columns which sorts
+	the table data based on the primary key column(s). You can only have 1 clustered index per table
+
+----------------------------- NON-CLUSTERED INDEX -------------------------------
+
+- Non-Clustered indexes are any other indexes created on any combination of columns of a table
+
+- Each non-clustered index added to a table duplicates all the rows of the table (barring a few exceptions)
+	in 8kb pages on disk, excluding the columns not mentioned in the index
+	
+- DML operations (DELETE, INSERTS, UPDATES) have to do more work to maintain every copy (from each index)
+	of the rows of the table. So if there are two indexes on a table (the primary key clustered index and 
+	a user created non-clustered index, DELETE and INSERT operations have to do twice the work to make changes
+	
+---------------------------------- COVERING INDEX -----------------------------------
+
+- You can create a non-clustered index that covers all the fields required by a query. This means that
+	all the columns required by the query are contained within the index pages, so the query can perform a seek
+	scan on the index pages without using the clustered index/table pages 
+	
+- covering indexes are larger than an equivalent non-covering index, But it takes up more space, memory, more time for backups,
+	INSERTS, UPDATES, DELETES. 
+
+- But it can lead lead to better performance in instances where an index lookup was being used
+
+
+
+------------------------ INDEX FRAGMENTATION ----------------------------------
+
+-Index fragmentation general guidelines
+	- less than 10% is good
+	- between 10%-30% REORGANIZE
+	- more than 30% REBUILD
+	
+
+ 

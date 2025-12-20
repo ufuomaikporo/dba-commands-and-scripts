@@ -1,0 +1,73 @@
+############################################# CACHE AND I/O #############################################
+DB_BLOCK_SIZE=8192
+
+###################################### CURSORS AND LIBRARY CACHE #############################################
+OPEN_CURSORS=500
+
+############################################# PROCESSES AND SESSIONS ##############################################
+#Sets the maximum number of processes that can be started by that instance. 
+#This is the most important primary parameter to set, because many other parameter (i.e SESSIONS) values are deduced from this.
+
+PROCESSES=500
+
+##################################### DIAGNOSTICS AND STATISTICS #############################################
+# A "diag" folder will be created in the directory specified
+DIAGNOSTIC_DEST='C:\App\Oracle\'
+
+########################################### RECOVERY AREA #############################################
+DB_RECOVERY_FILE_DEST='D:\Oracle\DRASRDW52\fast_recovery_area\'
+DB_RECOVERY_FILE_DEST_SIZE=13G
+
+######################################## CONTROL FILE CONFIGURATION #############################################
+CONTROL_FILES=('D:\Oracle\DRASRDW52\Data\control01.ctl',
+               'D:\Oracle\DRASRDW52\Data\control02.ctl')
+
+
+############################################# SHARED SERVER ####################################################3
+DISPATCHERS = '(PROTOCOL=TCP)(SERVICE=ora12cextXDB)',
+
+############################################ MISCELLANEOUS
+# Use 19.0.0 for 19C, Use 12.2.0 for 12C
+COMPATIBLE='19.0.0'
+USE_LARGE_PAGES=ONLY
+
+############################################## DB NAME ##########################################################
+# 8-character limit
+DB_NAME=DRASRDW52
+
+# Must be unique on the server host
+DB_UNIQUE_NAME=DRASRDW52
+
+
+############################################## NETWORK REGISTRATION ##############################################
+# INSTANCE_NAME is the same as SID 
+INSTANCE_NAME=MyLocalInstance
+
+# SERVICE_NAMES is the database service name that will register with the listener
+SERVICE_NAMES=DRASRDW52.EDDYFINDT.COM
+
+# Domain name for the server 
+DB_DOMAIN='EDDYFINDT.COM'
+
+# allow SYS user to connect using OS authentication
+REMOTE_LOGIN_PASSWORDFILE=NONE
+
+################################################ MEMORY ##############################################
+PGA_AGGREGATE_TARGET=1500M
+SGA_TARGET=2596M
+
+# OR simply set the MEMORY_TARGET and allow the server to choose size of SGA and PGA
+# MEMORY_TARGET = 4096M
+
+
+############################################## REDO LOG AND RECOVERY ##############################################
+FAST_START_MTTR_TARGET=300
+
+############################################ AUTOMATIC UNDO MANAGEMENT ##############################################
+UNDO_TABLESPACE='UNDOTBS'
+
+
+
+
+
+

@@ -1,0 +1,272 @@
+##################################################################################################################
+# SCALAR FUNCTIONS
+##################################################################################################################
+
+--------------------- Add a space to the substring_to_replace to get an exact match replacement
+
+REPLACE (input_string, 'substring_to_replace', 'replacement_string')
+
+--------------------- Get length of string (ignores trailing whitespace)
+
+LEN('string')
+
+---------------------- Get length of string (includes trailing whitespaces)
+
+DATALENGTH('string')
+
+--------------------- Get properties of a column - Check if the column is an identity column
+SELECT COLUMNPROPERTY(OBJECT_ID('ActionItemProperty'),'Id','IsIdentity')
+
+-------------------- Check if column exists
+
+IF (SELECT COL_LENGTH('CorrosionDeposit', 'BeginStationSeriesId')) IS NOT NULL
+BEGIN
+	PRINT 'Column Exists'
+END
+
+-------------------- Used as a measure against sql injection
+-- If forms square brackets around the object name. Used around object names (tables, column, schema, etc) that are used as 
+   a variable in dynamic sql statements
+   
+-- Does not work inside compare string for LIKE clause
+   
+QUOTENAME (ObjectName)
+
+-------------------------- Split string into columns 
+
+SELECT value FROM STRING_SPLIT('Lorem ipsum dolor sit amet.', ' ');
+
+------------------------ find position of a string character
+
+1) Use CHARINDEX if searching for a single string or character set (Ex. search for string 't' in string literal 'Customer')
+SELECT CHARINDEX('t', 'Customer')
+
+2) Using PATINDEX to allow regular expressions (Ex. Find the position of either 'AM' or 'PM' characters in a string)
+SELECT PATINDEX('%[AM|PM]%', '2025-03-14 11:57 PM Is the time') 
+
+--------------------------- Return user name
+
+- Return the current user on database level. All but database_principal_id() return the name.
+
+CURRENT_USER, USER, USER_NAME(), DATABASE_PRINCIPAL_ID(), SESSION_USER
+
+- Return the information about the current user on server level, in SQL Server parlance known as the login. 
+
+SYSTEM_USER, SUSER_NAME, SUSER_SNAME(), SUSER_ID(), SUSER_SID().
+
+- This function returns the name of the login that actually logged into SQL Server Instance. 
+It can be different from SYSTEM_USER & co, if there is impersonation in play.
+
+ORIGINAL_LOGIN()
+
+##########################################################################################
+# AGGREGATE FUNCTIONS
+##########################################################################################
+
+------------------------------------------- COALSECE/STRING_AGG ---------------------------------------------
+
+-------- OPTION 1) STRING_AGG
+
+STRING_AGG function only works on SQL Server 2017 and higher
+
+-- The WITHIN GROUP command allows you to sort the data
+SELECT STRING_AGG(name, ', ') WITHIN GROUP (ORDER BY column_id)
+FROM sys.columns
+WHERE is_computed = 0 AND OBJECT_NAME(object_id) = 'ListDomain'
+
+
+----- OPTION 2) STUFF
+
+------- ALTERNATIVE TO STRING_AGG FOR SQL Server 2016 and lower
+
+-- forms a comma-delimited list of names of the columns from the ListDomain table 
+SELECT STUFF(
+				(SELECT ', ' + name
+				FROM sys.columns 
+				WHERE OBJECT_NAME(object_id) = 'ListDomain'
+				ORDER BY column_id
+				FOR XML PATH(N''), TYPE
+				).value(N'.[1]', N'nvarchar(max)'), 1, 2, N''
+			)
+
+OR -- the only difference is what is written after 'FOR XML PATH...' the results are the same otherwise
+
+SELECT STUFF(
+				(SELECT ', ' + name
+				FROM sys.columns 
+				WHERE OBJECT_NAME(object_id) = 'ListDomain'
+				ORDER BY name
+				FOR XML PATH('')
+				), 1, 2, ''
+			)
+
+---------- OPTOIN 3) COALESCE
+
+-- The example of the COALESCE function below can be done with the STRING_AGG function 
+
+---------- a) the seperator (',') is placed after the first table name and then after every other table name 
+
+DECLARE @ColumnList NVARCHAR(MAX)
+
+SELECT TOP 5 @ColumnList = COALESCE(@ColumnList, '') + name + ', '
+FROM sys.tables
+
+---------- b) IF @ColumnList is NULL, the seperator (',') is placed after the first table name and then after every other table 
+			except for the table in the list. Otherwise the seperator (',') will be placed before the first table name than after 
+			every other table name except for the last table in the list
+
+SELECT TOP 5 @ColumnList = COALESCE(@ColumnList + ', ', '') + name 
+FROM sys.tables
+
+--------------------------------------------- Get a word count  ------------------------------------------
+
+-- @snr_process_2 is the source string, @replace is the string being counted
+
+@wordcount = (LEN(@snr_process_2) - LEN(REPLACE(@snr_process_2, @replace_string, '')))/LEN(@replace_string)
+
+------------------------------------------- Object Functions ------------------------------------------
+
+-- get column name from table_id and column id
+
+SELECT COL_NAME ( table_id , column_id )
+
+-- get table_id from table_name
+
+SELECT OBJECT_ID('table_name')
+
+-------------------------------- Drop Default constraints on a table's columns ----------------------------
+
+--CHECK default constraints
+IF OBJECT_ID('SchemaName.MyConstraint', 'D') IS NULL
+BEGIN
+    -- create it here
+END
+
+DECLARE @ConstraintName nvarchar(200)
+SELECT @ConstraintName = Name FROM SYS.DEFAULT_CONSTRAINTS
+WHERE PARENT_OBJECT_ID = OBJECT_ID('INCIDENT')
+AND PARENT_COLUMN_ID = (SELECT column_id FROM sys.columns
+                        WHERE NAME = N'CreateByUserId'
+                        AND object_id = OBJECT_ID(N'INCIDENT'))
+IF @ConstraintName IS NOT NULL
+EXEC('ALTER TABLE INCIDENT DROP CONSTRAINT ' + @ConstraintName)
+
+-------------------------------------------- Renaming a Column -------------------------------------------
+
+EXECUTE sp_rename 'table_name.old_column_name', 'new_column_name', 'COLUMN';
+
+-- Dynamically renaming a column with variables. The table name is stored in the @table_name variable and the
+-- column name is stored in the @col_name variable which is combined into the qualified column name stored in the
+-- q_column_name variable
+
+DECLARE @q_column_name NVARCHAR(100)
+SET @q_column_name = @table_name + '.' + @col_name
+
+EXECUTE sp_rename @q_column_name, @replace_string, 'COLUMN';
+
+EXECUTE sp_rename @column, @replace_string, 'COLUMN';
+
+-------------------------------- Get the Object Definition given the object name ------------------------------
+
+-- The object name is converted to an object id for the OBJECT_DEFINITION function
+
+--Method 1
+select OBJECT_DEFINITION(OBJECT_ID('DF__H_CLEANIN__ShdwC__4B6DDEB5'))
+
+--Method 2
+SELECT    [definition]
+FROM    sys.sql_modules
+WHERE    object_id = OBJECT_ID('MyProcedure')
+GO
+
+----------------------------------- Use dynamic sql to exexute a command -------------------------------------
+
+EXECUTE dbo.sp_executesql @statement = N'CREATE TRIGGER [dbo].[tu_lineloop] ON [dbo].[LineLoop] FOR UPDATE AS 
+IF EXISTS(SELECT * FROM DELETED)
+BEGIN
+    UPDATE dbo.LineLoop
+    SET LastModByUserId = suser_sname(), LastModDateTime = getdate() 
+    FROM dbo.LineLoop as t, DELETED as d
+    WHERE t.Id=d.Id;
+END'
+
+#################################################################################################
+# WINDOWS COMMANDS 
+#################################################################################################
+
+xp_cmdshell is a built-in Microsoft SQL Server extended stored procedure that allows users to run 
+Windows command prompt commands from within SQL. It can be used to view files in a windows directory,
+create zip files, etc.
+
+- It needs to be enabled first by doing the following
+
+-- 1) Show Advanced Options
+EXEC sp_configure 'show advanced options', 1
+GO
+RECONFIGURE
+GO
+
+-- 2) Enable xp_cmdshell
+EXEC sp_configure 'xp_cmdshell', 1
+GO
+RECONFIGURE
+GO
+
+-- 3) Hide Advanced Options
+EXEC sp_configure 'show advanced options', 0
+GO
+RECONFIGURE
+GO
+
+-------------------------- Create a .rar file -----------------------
+
+OPTION 1)
+
+EXEC master.dbo.xp_cmdshell '""C:\Program Files\WinRAR\Rar.exe" a "V:\FileCompress\Destination Directory\1109_2019-09-23 155716.140.RAR" "V:\FileCompress\Source Directory\1109_2019-09-23 155716.140.csv""'
+
+OPTION 2) Dynamic execution (you cannot use NVARCHAR(MAX) for command parameter @SQL you must set the length to a definitive number)
+
+DECLARE @SQL NVARCHAR(4000)
+DECLARE @ArchiveFilePath NVARCHAR(500) = 'C:\Users\test.rar'
+DECLARE @BUFilePath NVARCHAR(500) = 'C:\users\test.txt'
+
+SET @SQL = '""' + @WinrarExeFilePath + '" u -ep -ibck -df -y "' + @ArchiveFilePath +'" "' + @BUFilePath + '""'
+EXEC master.dbo.xp_cmdshell @SQL
+
+
+#################################################################################################
+# TABLE-VALUED FUNCTIONS
+#################################################################################################
+
+------------------------ Execute Table-valued functions
+
+OPTION 1) Display result
+
+SELECT * FROM dbo.FuntionName(argment1, argument2)
+
+OPTION 2) Store result in a table
+
+SELECT * INTO tmp_table FROM dbo.FuntionName(argment1, argument2)
+ 
+
+########################################################################################################
+# DATES
+########################################################################################################
+
+-- Get current date 
+
+GETDATE()
+
+-- Truncate date to midnight
+
+option 1) 
+
+FORMAT(GETDATE(), 'yyyy-MM-dd 00:00:00')
+
+option 2) 
+
+SELECT CAST(FLOOR(CAST(GETDATE() AS FLOAT)) AS DATETIME)
+
+-- Truncate date and add 1 minute to time (1 minute after midnight)
+
+SELECT CAST(FLOOR(CAST(GETDATE() AS FLOAT)) AS DATETIME) + 2.00001/1440

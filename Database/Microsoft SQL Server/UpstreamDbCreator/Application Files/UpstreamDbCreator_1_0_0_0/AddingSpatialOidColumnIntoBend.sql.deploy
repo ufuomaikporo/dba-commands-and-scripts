@@ -1,0 +1,7 @@
+-- Adding the SpatialOid column into Bend table
+
+if not exists(SELECT * FROM INFORMATION_SCHEMA.Columns c Where c.Table_Name = 'Bend' And c.Column_Name = 'SpatialOid')
+BEGIN
+	ALTER TABLE dbo.Bend
+	ADD SpatialOid int 
+END

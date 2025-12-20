@@ -1,0 +1,45 @@
+-- The folowing run block duplicates a CDB with multiple pdbs
+-- Use the DB_FILE_NAME_CONVERT clause to rename directories for datafiles
+-- Use the SET NEWNAME option to RENAME individual tablespaces, datafiles
+-- if all the datafiles are in the same location, you can use the SET NEWNAME 
+   DATABASE command with the the format specifier '%b' to relocate all the files
+   at once  
+-- The LOGFILE clause renames the redo log files. Alternatives are to set the 
+   LOG_FILE_NAME_CONVERT initialization parameter in the pfile (faster), or set up 
+   Oracle Managed Files initialization parameters DB_CREATE_FILE_DEST, 
+   DB_CREATE_ONLINE_DEST_n, or DB_RECOVERY_FILE_DEST in the pfile
+
+RUN {
+DUPLICATE TARGET DATABASE TO clonedb
+SPFILE PARAMETER_VALUE_CONVERT=('C:\CDB2\ORADATA', 'C:\app\oracle\oradata\clonedb')
+DB_FILE_NAME_CONVERT=('C:\CDB2\ORADATA', 'C:\app\Oracle\oradata\clonedb',
+    'C:\CDB2\ORADATA\PDBSEED', 'C:\app\Oracle\oradata\clonedb\pdbseed',
+    'C:\CDB2\ORADATA\PDB1', 'C:\app\Oracle\oradata\clonedb\pdb1',
+    'C:\CDB2\ORADATA\PDB2', 'C:\app\Oracle\oradata\clonedb\pdb2',
+    'C:\CDB2\ORADATA\PDB3', 'C:\app\Oracle\oradata\clonedb\pdb3')
+LOGFILE
+GROUP 1 ('C:\app\oracle\oradata\clonedb\redo01a.log', 
+         'E:\app\oracle\oradata\clonedb\redo01b.log',
+         'F:\app\oracle\oradata\clonedb\redo01c.log') SIZE 200M,
+GROUP 2 ('C:\app\oracle\oradata\clonedb\redo02a.log', 
+         'E:\app\oracle\oradata\clonedb\redo02b.log',
+         'F:\app\oracle\oradata\clonedb\redo02c.log') SIZE 200M,
+GROUP 3 ('C:\app\oracle\oradata\clonedb\redo03a.log', 
+         'E:\app\oracle\oradata\clonedb\redo03b.log',
+         'F:\app\oracle\oradata\clonedb\redo03c.log') SIZE 200M;
+}
+
+-- The run block above uses the following sample pfile
+
+DB_NAME=CLONEDB
+REMOTE_LOGIN_PASSWORDFILE=EXCLUSIVE
+
+## needed for a CDB
+ENABLE_PLUGGABLE_DATABASE=TRUE
+
+## does not work in Oracle 12c
+LOG_FILE_NAME_CONVERT=('C:\CDB2\ORADATA', 'C:\app\oracle\oradata\clonedb')
+
+## The following are only needed if you're configuring OMF storage
+DB_RECOVERY_FILE_DEST='F:\app\oracle\recovery_area\clonedb'
+DB_RECOVERY_FILE_DEST_SIZE=20G 

@@ -1,0 +1,354 @@
+###############################################
+# MANAGING USERS
+###############################################
+----------------DATA DICTIONARY INROMATION-------------------
+-- DBA_USERS: All Database users 
+-- DBA_TS_QUOTAS: Tablespace quota
+-- DBA_SYS_PRIVS: System privileges granted to users 
+-- DBA_TAB_PRIVS: Object privileges granted to users
+-- DBA_ROLES: All roles that exist in the database
+-- DBA_ROLE_PRIVS: Roles granted to users and roles
+-- ROLE_ROL_PRIVS: Roles that are granted to roles
+-- ROLE_SYS_PRIVS: System privileges granted to roles
+-- ROLE_TAB_PRIVS: Object privileges granted to roles
+-- SESSION_ROLES: Roles that are enabled for the current user only
+
+----------------------VIEW USERS IN DATABASE---------------------------------
+
+-- Report on users not created automatically by ORACLE
+
+SET PAGES 9999 LINES 200
+COLUMN username FORMAT A25
+COLUMN default_tablespace FORMAT A20
+COLUMN temporary_tablespace FORMAT A20
+COLUMN profile FORMAT A20
+
+SELECT username, default_tablespace, temporary_tablespace, profile
+FROM dba_users
+WHERE oracle_maintained = 'N';
+
+-------------------------- VIEW CURRENT SESSIONS ------------------------------
+
+SET LIN 250
+SET PAGES 10000
+COLUMN osuser FORMAT A25
+COLUMN machine FORMAT A25
+COLUMN program FORMAT A20
+COLUMN module FORMAT A20
+COLUMN dbuser FORMAT A25
+
+SELECT sid,
+      serial#,
+      osuser,
+	  username AS DBUser,
+	  status,
+      machine,
+      module
+FROM v$session
+WHERE username IS NOT NULL;
+
+------------------------------ Kill current user session ----------------------------------------
+
+ALTER SYSTEM KILL SESSION 'sid, serial#' IMMEDIATE;
+
+-- KILL sessions using dynamic sql. The sample query below finds all RMAN sessions connected to the database
+
+SET PAGES 10000
+
+SELECT 'ALTER SYSTEM KILL SESSION ''' || sid || ', ' || serial# || ''' IMMEDIATE;'
+FROM v$session
+WHERE username IS NOT NULL 
+AND LOWER(program) LIKE '%rman%';
+
+---------------------------------------- Users with Active transactions --------------------------------
+
+SELECT s.sid,
+       s.serial#,
+       s.osuser,
+	   s.username AS DBUser,
+	   s.status,
+       s.machine,
+       s.program,
+       t.status AS Transaction_Status
+FROM v$session s
+JOIN v$transaction t
+ON s.saddr = t.ses_addr;
+
+---------------------------------------- USER TABLESAPCE QUOTA ----------------
+
+COLUMN username FORMAT A20
+
+SELECT username, tablespace_name, (max_bytes/1024/1024) mb_tbs_quota
+FROM dba_ts_quotas
+WHERE username = 'JEFF';
+
+-------------------------------- VIEW CURRENT USER'S USERNAME --------------------------
+
+-- Get Operating system username
+SELECT SYS_CONTEXT('USERENV', 'OS_USER') FROM DUAL
+
+OR
+
+-- Get database username
+SELECT USER FROM DUAL
+
+OR
+
+SHOW USER
+
+REM--------------------DROP USER--------------------------------------------
+
+-- specify cascade to drop all objects in user schema
+
+DROP USER "Bob" CASCADE;
+
+REM-----------------CREATE USER---------------------------------------------
+
+CREATE USER "Bob" IDENTIFIED BY "CRUSADER"
+DEFAULT TABLESPACE users
+TEMPORARY TABLESPACE temp
+QUOTA 1M ON users
+QUOTA 1M ON indx
+PROFILE registrar;
+
+############################################################################################
+# SYSTEM PRIVILEGES
+##############################################################################################
+
+----------------------- CHECK TO SEE WHO HAS ELEVATED PRIVILEGES (I.E SYSDBA) --------------
+
+COL username FORMAT A20
+COL sysdba FORMAT A10
+COL sysoper FORMAT A10
+COL sysasm FORMAT A10
+COL sysbackup FORMAT A10
+COL sysdg FORMAT A10
+COL syskm FORMAT A10
+SELECT username,
+	   sysdba,
+	   sysoper,
+	   sysasm,
+	   sysbackup,
+	   sysdg,
+	   syskm 
+FROM v$pwfile_users;
+
+REM--------------SYSTEM PRIVILEGES GRANTED TO USER--------------------------
+
+-- Always use the principle of least privilege. You should grant CREATE SESSION instead of 
+  CONNECT role to users that need to connect to the database unless otherwise specified.
+
+
+COLUMN grantee FORMAT A15
+COLUMN admin_option FORMAT A20
+
+SELECT grantee, privilege, admin_option
+FROM dba_sys_privs
+WHERE grantee = 'ATCO_UPDM_PROD'
+ORDER BY 2;
+
+-- Grant a system privilege multiple users at once
+
+GRANT CREATE SESSION TO nggreenbe, dfaviet, isciarra, jmurman, lpopp;
+
+------------------------------------ COPY SYSTEM PRIVILEGES FROM USER TO ANOTHER -------------------
+
+SELECT 'GRANT ' || privilege || ' TO ' || 'ETP_IRASV6_TEST;'
+FROM dba_sys_privs
+WHERE grantee = 'ETP_IRASV6_STAGE';
+
+#####################################################################################################
+# OBJECT PRIVILEGES
+#####################################################################################################
+
+- The password file parameter (REMOTE_LOGIN_PASSWORDFILE) must be enabled to assgin elevated 
+  privileges such as SYSBACKUP, SYSDBA to non-SYS users. MUST be set to EXCLUSIVE or SHARED
+
+REM---------------------Object Privileges granted to Users-----------------
+
+SET LIN 120
+SET PAGES 1000
+COL grantee FORMAT A15
+COL owner FORMAT A15
+COL table_name FORMAT a20
+COL grantor FORMAT A15
+
+SELECT grantee, privilege, table_name, owner, grantor, grantable
+FROM dba_tab_privs
+WHERE grantee IN ('ATCO_UPDM_PROD')
+ORDER BY 1, 3, 2;
+
+--------------------------------------- GRANT PRIVILEGES ON ANOTHER USER'S OBJECTS --------------------------------
+
+-- You can use the data dictionary to generate all the commands necessary to 
+   grant all object privileges on all objects owned by a user (HR) to another user or role named 'hr_rw'
+
+SELECT 'GRANT SELECT, INSERT, UPDATE, DELETE ON ' || owner || '.' || object_name || ' TO hr_rw;'
+FROM dba_objects
+WHERE owner = 'HR'
+AND object_type IN ('TABLE', 'VIEW')
+UNION
+SELECT 'GRANT EXECUTE ON ' || owner || '.' || object_name || ' TO hr_rw;'
+FROM dba_objects
+WHERE owner = 'HR'
+AND object_type IN ('PROCEDURE', 'FUNCTION', 'PACKAGE');
+
+-- Copy and paste the generated commands into a script from which it can be executed or
+   copy and paste the commands into the sql prompt to execut them
+
+------------------------------------- COPY OBJECT PIVILEGES FROM ONE USER TO ANOTHER ---------------------
+
+SELECT 'GRANT ' || privilege || ' ON "' || owner || '"."' || table_name || '" TO TargetUser;'
+FROM dba_tab_privs
+WHERE grantee = 'ETP_IRASV6_TEST_OWNR'
+
+/*
+GRANT the same object priviliges to ETP_IRASV6_TEST as was granted to ETP_IRASV6_STAGE
+on all tables in ETP_IRASV6_TEST_OWNR schema
+*/
+SELECT 'GRANT ' || privilege || ' ON ' || REPLACE(owner, 'STAGE', 'TEST') || '."' || table_name 
+			|| '" TO ' || REPLACE(grantee, 'STAGE', 'TEST') AS grant_stmt
+FROM dba_tab_privs dtp
+WHERE grantee IN ('ETP_IRASV6_STAGE')
+AND table_name IN (SELECT table_name FROM all_tables WHERE owner = 'ETP_IRASV6_TEST_OWNR');	
+
+#######################################################################################################
+# ROLES
+#######################################################################################################
+
+REM--------------ROLES ASSSIGNED TO USER------------------------------------
+
+-- Check the roles granted to any user (must have dba privileges to access this
+   table in the data dictioary)
+
+SET PAGESIZE 100
+COLUMN grantee FORMAT A20
+COLUMN granted_role FORMAT A30
+COLUMN admin_option FORMAT A15
+COLUMN default_role FORMAT A15
+
+SELECT grantee, granted_role, admin_option, default_role
+FROM dba_role_privs
+WHERE grantee LIKE '%SDE%'
+ORDER BY 1;
+
+OR
+
+-- Check the roles granted to the current user only
+
+COLUMN username FORMAT A15
+COLUMN granted_role FORMAT A20
+COLUMN admin_option FORMAT A12
+
+SELECT username, granted_role, admin_option
+FROM user_role_privs;
+
+-- Grant a role to one or more users or roles
+
+GRANT hr_rw TO nggreenbe;
+
+GRANT hr_ro TO dfaviet, isciarra, jmurman, lpopp;
+
+-------------------------------- COPY ROLES TO OTHER USER -----------------------------
+
+SELECT 'GRANT ' || granted_role || ' TO ' || grantee || ';'
+FROM dba_role_privs
+WHERE grantee = 'ETP_IRASV6_TEST_OWNR';
+
+
+###########################################################################
+# MANAGING ROLES
+###########################################################################
+
+REM-----------------VIEW CURRENTLY EXISTING ROLES IN DATABASE--------------
+
+COLUMN role FORMAT A20
+COLUMN authentication_type FORMAT A20
+
+SELECT role, password_required, authentication_type
+FROM dba_roles
+WHERE role LIKE '%KPS%';
+
+REM------------------VIEW ROLES ASSIGNED TO USERS TO ROLES--------------------------
+
+SET PAGESIZE 100
+COLUMN grantee FORMAT A20
+COLUMN granted_role FORMAT A20
+COLUMN admin_option FORMAT A15
+COLUMN default_role FORMAT A15
+
+SELECT grantee, granted_role, admin_option, default_role
+FROM dba_role_privs
+WHERE granted_role LIKE '%KPS%'
+ORDER BY grantee;
+
+REM-------------------------ROLES GRANTED TO ROLES------------------------
+
+COLUMN role FORMAT A20
+COLUMN granted_role FORMAT A20
+
+SELECT role, granted_role FROM role_role_privs
+WHERE role LIKE '%LAND%'
+ORDER BY role;
+
+
+REM------------------VIEW SYSTEM PRVILEGES GRANTED TO ROLES----------------
+
+COLUMN role FORMAT A15
+COLUMN admin_option FORMAT A15
+
+SELECT role, privilege, admin_option
+FROM role_sys_privs
+WHERE role LIKE '%KPS%'
+ORDER BY 1;
+
+REM------------------VIEW OBJECT PRVILEGES GRANTED TO ROLES----------------
+
+SET LIN 120
+SET PAGESIZE 100
+COLUMN role FORMAT A15
+COLUMN privilege FORMAT A20
+COLUMN table_name FORMAT A20
+COLUMN column_name FORMAT A20
+COLUMN owner FORMAT A15
+COLUMN grantable FORMAT A10
+
+SELECT role, privilege, table_name, column_name, owner, grantable
+FROM role_tab_privs
+WHERE role LIKE '%KPS%'
+ORDER BY role;
+
+REM----------------------ENABLING AND DISABLING DEFAULT ROLES---------------
+
+ALTER USER bob DEFAULT ROLE RESOURCE, CONNECT;
+
+-- you can use ALL, NONE, or a list of role names after the keyword DEFAULT ROLE
+
+SET ROLE connect, resource;S
+
+--disables specifed roles for current user (can use ALL or NONE after ROLE keyword)
+-- name of role followed by  'IDENTIFIED BY password' must be entered
+--     for roles that were created with or alterd to have a password
+--use session_roles data dictionary view to view enabled rows
+
+###################################################################################
+# MANAGING PRIVILEGES
+#####################################################################################
+DBA_SYS_PRIVS  Lists system privileges granted to users and roles
+SESSION_PRIVS: Lists the privileges that are currently available to the user
+DBA_TAB_PRIVS: Lists all grants on all objects in the database
+DBA_COL_PRIVS: Describes all object-column grants in the database
+
+REM------------------GRANT SYSTEM PRIVILEGES--------------------------------
+
+GRANT RESOURCE, CONNECT
+TO "Bob";
+
+-- RESOURCE role grants the following system privileges (CREATE CLUSTER, CREATE PROCEDURE, CREATE SEQUENCE, 
+   CREATE TABLE, CREATE TRIGGER, CREATE TYPE)
+-- CONNECT role grants the follwing system privileges (CREATE SESSION, SET CONTAINER)
+
+
+
+
+

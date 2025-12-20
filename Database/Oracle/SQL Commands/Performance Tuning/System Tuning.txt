@@ -1,0 +1,73 @@
+################################################################################
+# ORACLE INSTANCE MEMORY
+################################################################################
+
+The total Oracle allocated Memory is equal to the SGA_TARGET + PGA_AGGREGATE_TARGET
+
+----------------------------- VIEW ALLOCATED MEMORY ------------------------
+
+SHOW PARAMETER sga
+SHO PARAMETER pga
+
+---------------------------------- VIEW ADVISED MEMORY ALLOCATION ---------------
+
+-- Advised memory for pga
+
+SELECT pga_target_for_estimate,
+       pga_target_factor,
+	   advice_status,
+	   estd_time,
+	   estd_extra_bytes_rw,
+	   estd_pga_cache_hit_percentage
+FROM v$pga_target_advice;
+
+-- Advised memory for sga
+
+SELECT sga_size,
+	   sga_size_factor,
+	   estd_db_time,
+	   estd_db_time_factor,
+	   estd_physical_reads
+FROM v$sga_target_advice;
+
+--------------------------------- VIEW RECOMMENDED SGA_TARGET SIZE --------------------
+
+-- This is based on past memory usage
+
+COLUMN finding_time      FOR a20    HEAD 'Finding Time'
+COLUMN current_target_mb FOR 999,999 HEAD 'Current SGA|Target (MB)'
+COLUMN advised_target_mb FOR 999,999 HEAD 'Advised SGA|Target (MB)'
+
+BREAK ON REPORT
+COMPUTE maximum LABEL 'Recommended Min. SGA' OF advised_target_mb ON report
+
+SELECT TO_CHAR( al.execution_start, 'dd Mon yyyy HH24:MI:SS') AS finding_time,
+       aa.num_attr1/1048576 AS current_target_mb,
+       aa.num_attr2/1048576 AS advised_target_mb
+  FROM dba_advisor_actions  aa,
+       dba_advisor_findings af,
+       dba_advisor_log      al
+ WHERE 1=1
+   AND al.owner          = af.owner
+   AND al.task_name      = af.task_name
+   AND aa.owner          = af.owner
+   AND aa.task_name      = af.task_name
+   AND aa.execution_name = af.execution_name
+   AND af.finding_name   = 'Undersized SGA'
+   AND aa.attr1          = 'sga_target'
+ ORDER
+    BY al.execution_start
+;
+clear computes
+
+----------------------------------- ALLOCATE MORE MEMORY ----------
+
+-- sga_max_size MUST BE greater than or equal to sga_target
+
+ALTER SYSTEM SET sga_max_size=7g SCOPE=spfile;
+ALTER SYSTEM SET sga_target=6865M SCOPE=spfile;
+
+-- pga_aggregate_limit MUST BE greater than or equal to pga_aggregate_target
+
+ALTER SYSTEM SET pga_aggregate_limit=4g SCOPE=spfile
+ALTER SYSTEM SET pga_aggregate_target=1526m SCOPE=spfile;

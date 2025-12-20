@@ -1,0 +1,17 @@
+###############################################################
+# USERS
+################################################################
+
+CREATE USER testuser WITH PASSWORD 'Test4441#!';
+
+-- Allows user to connect to dataabse
+GRANT CONNECT ON DATABASE "IRASInsightHubWeb" TO TestUser;
+
+-- prerequisite for interacting with any objects within the schema such as selecting from tables, views, or executing functions. 
+GRANT USAGE ON SCHEMA reporting TO testuser;
+
+-- Allows user to select from EXSITING tables
+GRANT SELECT ON ALL TABLES IN SCHEMA reporting TO testuser;
+
+-- allows user to select from all future tables in the schema
+ALTER DEFAULT PRIVILEGES IN SCHEMA reporting GRANT SELECT ON TABLES TO testuser;

@@ -1,0 +1,422 @@
+############################################################################
+# GENERAL COMMANDS AND NOTES
+############################################################################
+
+NOTES**:
+
+- Use quotes to escape RMAN reserved words
+- You can use the '#' symbol to comment out lines in within the RUN block
+
+
+----------------------------------- EXECUTE SQL COMMANDS IN RMAN PROMPT -------------------
+
+sql "ALTER SYSTEM SWITCH LOGFILE";
+
+-------------------------- EXECUTE OPERATING SYSTEM COMMANDS IN RMAN PROMPT ----------------
+
+host "ls";
+
+---------------------------- view available encryption algorithms in SQL -----------------------
+
+set lin 120
+COL algorithm_name FORMAT a30
+COL algorithm_description FORMAT A40
+
+SELECT * FROM v$rman_encryption_algorithms;
+
+----------------Spool command output to a file instead of rman prompt---------------
+
+SPOOL LOG TO 'C:\Exercise_Output\Listing.log';
+
+-- To turn it off
+
+SPOOL LOG OFF;
+
+#########################################################################
+# STEPS FOR SETTING UP RMAN
+#########################################################################
+
+1) Set up Fast Recovery Area (FRA)
+2) Put database in archive log mode (make sure redo logs and control files are multiplexed)
+3) Create RMAN catalog and register the target database with the catalog
+4) Check RMAN configure settings and set to desired settings
+5) Enable block-change tracking (for incremental backup strategies)
+6) build scripts for running backups to FRA
+7) Use batch/shell scripting with crontab or windows task scheduler to automate the script
+
+
+#####################################################################
+CONFIGURE RMAN SETTINGS
+#####################################################################
+
+------------------view persistent settings in target database----------------------------
+
+-- use the con_id to identify the wich databases settings apply to in CDB
+-- con_id 0: entire container database, con_id 1: root container ONLY, 
+   con_id > 1: a specific pdb
+
+v$rman_configuration
+
+-- ---------------------TO view current configurations-------------------------
+
+SHOW ALL
+
+OR
+
+SHOW {setting name}
+
+--------------------------To configure persistent settings--------------------------------
+
+CONFIGURE {setting_name} {setting}
+
+CONFIGURE ENCRYPTION FOR DATABASE ON;
+
+-- To reset a setting back to the default
+
+CONFIGURE {setting_name} CLEAR;
+
+------ Configure retention policy-------------------------------
+
+-- maintains only the backups necessary to achieve this recovery window
+
+CONFIGURE RETENTION POLICY TO RECOVERY WINDOW OF 7 DAYS;
+
+-- maintains 2 copies of backup on disk. Other copies are marked as obsolete 
+    and can be deleted with the DELETE OBSOLETE command;
+
+CONFIGURE RETENTION POLICY TO REDUNDANCY 2;
+
+-- disables retention policy
+-- CONTROL_FILE_RECORD_KEEP_TIME initialization parameter determines the number of days 
+  reusable records (such as repository records) are kept in the control file. 
+  This will determine how long backups are kept when retention policy is disabled
+
+CONFIGURE RETENTION POLICY TO NONE;
+
+-- save space by not making multiple backup copies of datafiles that have not changed since the last backup
+  
+- Configure default backup type and parallelism (# of parallelism should not be more than # of CPU processors - adjust as needed) 
+
+CONFIGURE DEVICE TYPE DISK PARALLELISM 4 BACKUP TYPE TO BACKUPSET;
+
+- Configure automatic backup of control file and spfile to a specifed location with a specified naming format
+
+CONFIGURE CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO 'B:\Fast Recovery Area\ORA19C22\Backups\%d_%F_ControlFile_n_SPFILE'
+
+- Configure a nondefault backup location
+
+CONFIGURE DEVICE TYPE DISK FORMAT 'D:\Backups\ora_df%t_s%s_s%p';
+
+ ------------------------------RUN block commands--------------------------------
+
+-- use run blocks to execute jobs and use job commands (ALLOCATE CHANNEL, SWTICH, etc)
+-- use the SET command at the RMAN prompt to temporarily override persistent configuration settings 
+	just for the current session or within use it within a run block to modify the settings just for the run-block
+-- Some settings can only to used with the SET command ouside of a run-block (i.e. SET COMPRESSION ALGORITHM)
+
+RUN {SET CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO 'B:\Fast Recovery Area\ORA19C22\Backups\ControlFile&SPFile_%F';
+	 ALLOCATE CHANNEL c1 DEVICE TYPE DISK
+     FORMAT "C:\disk2\%U" BACKUP AS BACKUPSET DATABASE;
+     SQL ALTER SYSTEM ARCHIVE LOG CURRENT;
+    }
+
+
+#########################################################################################
+CONNECTING WITH RMAN
+#########################################################################################
+
+------------------------Connecting with RMAN----------------------------------------
+
+------------ Connecting to a single database
+
+-- Using Oracle Net authentication from windows command prompt
+    (or SQL prompt with the '$' prefix)
+
+$rman target 'sys@cdb2/oracle as sysbackup'
+$rman catalog 'sys@orclpdb/oracle as sysbackup'
+
+-- From RMAN prompt (assuming Oracle_sid= target_SID)
+
+CONNECT TARGET 
+CONNECT CATALOG rman_owner@orclpdb/rman_owner;
+
+
+----------- Connecting to target and Catalog database at the same time using windows command prompt or SQL Prompt 
+
+-- Using OS authentication
+
+SET ORACLE_SID = CDB2;
+RMAN TARGET / CATALOG rman_owner@orclpdb/rman_owner 
+
+-- Using Oracle database authentication 
+NOTE** the double quotes inside single quotes may be necessary to connect with non-SYS user using an elevated privilege(i.e as SYSBACKUP)
+
+SET ORACLE_SID = CDB2;
+RMAN TARGET '"sys/password@cdb1 as sysdba"' CATALOG rman_owner/password@orclpdb;
+
+#########################################################################################
+RMAN CATALOG
+#########################################################################################
+
+----------------------------------- Check if RMAN catalog exists ---------------------------------
+
+----------- STEP 1) Connect to the recovery catalog database and find the owner of the recovery catalog
+
+SELECT owner
+FROM dba_objects
+WHERE object_name = 'RC_DATABASE';
+
+---------- STEP 2) Check the recovery catalog table 
+
+SET LIN 140
+SELECT * FROM owner.RC_DATABASE;
+
+
+-------------------------------- Create rman catalog ----------------------------------------------
+
+https://docs.oracle.com/en/database/oracle/oracle-database/19/rcmrf/CREATE-CATALOG.html
+
+connect to the database that will be used to store the rman catalog
+
+---------------1) Create tablespace for catalog tables
+
+CREATE TABLESPACE rman DATAFILE 'C:\app\Oracle\oradata\ORANT12C\orclpdb\RMAN.dbf'
+SIZE 15M REUSE AUTOEXTEND ON;
+
+---------------2) Create rman catalog user and grant necessary privileges
+
+CREATE USER rman IDENTIFIED BY rman
+TEMPORARY TABLESPACE TEMP
+DEFAULT TABLESPACE rman
+QUOTA UNLIMITED ON rman;
+
+GRANT CREATE SESSION, RECOVERY_CATALOG_OWNER TO rman;
+
+-- Allow rman user to perform backups (remote_login_passwordfile init parameter needs to be set to EXCLUSIVE)
+
+GRANT SYSBACKUP TO rman; 
+
+NOTE** You may need to explicitly grant SELECT permissions on dba tables if dba role is not granted
+
+-----------------------4) Create Recovery Catalog
+
+Connect to the database that will contain the catalog as the catalog owner. For example:
+
+% rman
+RMAN> CONNECT CATALOG rman/cat@catdb
+
+CREATE CATALOG TABLESPACE cat_ts;
+
+Note:
+
+If the tablespace name you wish to use for the recovery catalog is an RMAN reserved word, then it must be uppercase and enclosed in quotes. For example:
+CREATE CATALOG TABLESPACE 'CATALOG';
+
+--------------4) Register the target database with the catalog in the catalog 
+---Connect to the target and catalog databases
+
+RMAN TARGET 'sys@cdb2/oracle as sysbackup' CATALOG rman_owner@orclpdb/rman_owner;
+
+REGISTER DATABASE;
+
+-------------------------------------- Move RMAN Catalog to New Database -----------------------------\
+
+http://pages.di.unipi.it/ghelli/didattica/bdldoc/B19306_01/backup.102/b14191/rcmcatdb007.htm#:~:text=To%20move%20the%20recovery%20catalog,the%20same%20release%20or%20later.
+
+1. Perform a datapump export of the schema containing the RMAN catalog
+----------------------------Unregister a database from the catalog------------------------
+
+-- connect to the target database and the catalog then issue the following command
+
+UNREGISTER DATABASE;
+
+-- When you unregister a database, all repository records in the RMAN catalog for 
+  that database are deleted. If you re-register again afterwards, the repository
+ records will be based on the contents of the control file at the current point of registry
+ 
+------------------------------- DROP the Catalog ------------------------------
+
+DROP CATALOG;
+
+------------------------------Resyncing rman catalog---------------------------------
+
+-- You should manually re-syncronize if
+    - you perform any RMAN activities while connected to the target 
+      without also connecting to the catalog database 
+    - if you perform infrequent backups. some archived log data might be missing from
+     the catalog cause it isn't automatically updated with every redo log switch
+    - after making changes to the physical  structure of the target database
+-- the above situations will cause the catalog to be out of sync
+
+-- Connect to both the target and catalog to resync them with the following command
+
+RESYNC CATALOG;
+
+######################################################################################
+# Enabling Block Change Tracking
+######################################################################################
+
+https://docs.oracle.com/database/121/ADMQS/GUID-3BAA0D48-CA35-4CD7-810E-50C703DC6FEB.htm
+
+---------- STEP 1) Check if block-change tracking is enabled
+
+SELECT status, filename FROM V$BLOCK_CHANGE_TRACKING;
+
+---------- STEP 2) Set location of block-change tracking file. The DB_CREATE_FILE_DEST initialization parameter 
+		specifies the location where new database files will be stored including (i.e, datafiles )
+		
+ALTER SYSTEM SET DB_CREATE_FILE_DEST = '/u01/app/oracle/oradata';
+
+---------- STEP 3) Enable block-change tracking
+
+ALTER DATABASE ENABLE BLOCK CHANGE TRACKING;
+
+########################################################################################
+RMAN SCRIPTS
+#########################################################################################
+
+-- Local scripts can only be used on the target database it was created on
+-- Global scripts can be used on any database that has been registered within the catalog
+
+-------------------------------Create script--------------------------------------
+
+-- create a local script that can be ran only on the target database that it was connected
+ to upon script creation
+
+CREATE SCRIPT IncrementalZero { 
+BACKUP AS COPY INCREMENTAL LEVEL 0 DATABASE PLUS ARCHIVELOG; 
+} 
+
+-- Creates a global script that can be ran on any target database within in catalog
+
+CREATE GLOBAL SCRIPT CleanUp
+ { 
+   DELETE NOPROMPT OBSOLETE; 
+   CROSSCHECK BACKUP; 
+   DELETE NOPROMPT EXPIRED BACKUP; 
+   CROSSCHECK COPY; 
+   DELETE NOPROMPT EXPIRED COPY; 
+   CROSSCHECK ARCHIVELOG ALL; 
+   DELETE NOPROMPT EXPIRED ARCHIVELOG ALL; 
+} 
+
+-- Creates a global script from an already existing text file
+
+CREATE GLOBAL SCRIPT script_name FROM FILE 'C:\DISKA\file_name.txt'
+
+-----------------------Updating a Script---------------------------------------
+
+-- Updates a local script (you can update a global script by using the GLOBAL keyword)
+
+REPLACE SCRIPT ColdBackup
+{
+ SHUTDOWN IMMEDIATE; 
+ STARTUP MOUNT; 
+ BACKUP AS COPY 
+ DEVICE TYPE DISK  
+ FORMAT 'C:\Exercise_Output\CDB2\Cold_backup\%u.bkp'  
+ KEEP UNTIL TIME '2022-03-15' 
+ RESTORE POINT 'RMAN_CATALOG'  
+ TAG='EMERGENCY_COLD_BACKUP'
+ DATABASE;  	
+ ALTER DATABASE OPEN; 
+} 
+
+-- Updates a global script using an existing text file in the specified location
+-- You can update local scripts by omitting the GLOBAL keyword
+
+UPDATE GLOBAL SCRIPT Cleanup FROM FILE 'C:\DISKA\CleanUp.txt';
+
+-------------------------------Running a script/ Creating a RUN Block ------------------------
+
+-- specify GLOBAL for global scripts
+
+RUN { EXECUTE SCRIPT ColdBackup;}
+
+RUN { EXECUTE GLOBAL SCRIPT Cleanbackup;}
+
+----------------------------Printing or showing a script-------------------------------------
+
+-- Prints the commands of a script to screen (specify GLOBAL for global scripts)
+
+PRINT {GLOBAL} SCRIPT script_name; 
+
+--Lists all the scripts that can be applied to the current target database 
+   that you are connected to
+
+LIST {GLOBAL} SCRIPT NAMES;
+
+-----------------------------Copying a script to file-------------------------------------
+
+PRINT SCRIPT CleanUp_new to FILE 'C:\DISKA\Cleanup_new.txt';
+
+------------------------- Enable Block change Tracking ---------------------------------
+
+--The block change tracking feature for incremental backups improves backup performance by recording changed blocks for each data file.
+
+ALTER DATABASE ENABLE BLOCK CHANGE TRACKING 
+  USING FILE 'D:\ORACLE\ORADATA\ORA19C\\rman_change_track.rman' REUSE;
+  
+-- The REUSE option tells Oracle Database to overwrite any existing block change tracking file with the specified name.
+
+########################################################################################
+DATA RECOVERY ADVISOR
+#######################################################################################
+
+------------------------See location of log, alert, and diagnostic file----------------
+
+SET PAGESIZE 100
+SET LINESIZE 120
+COLUMN NAME FORMAT A30
+COLUMN VALUE FORMAT A70
+
+SELECT Name, Value FROM v$diag_info;
+
+------------------------------Diagnose Failures--------------------------------------
+
+-- Shows failures in the database. CLOSED failures have been addressed, OPEN 
+  failures still need to be addressed
+
+LIST FAILURE {ALL| OPEN| CLOSED};
+
+-- List closed failures with the specified priority. CRITICAL failures are the
+  highest priority. database cannot open with critical failures, MAY open with
+  HIGH failures, and will open with LOW failures
+
+LIST FAILURE {CRITICAL|HIGH|LOW} CLOSED;
+
+-- Adds a description of what this failure means
+
+LIST FAILURE DETAIL;
+
+-- List failures except those identified by numeric id
+
+LIST FAILURE EXCLUDE FAILURE #, #...;
+
+-- Displays a summary of failures from LIST FAILURE (in same RMAN session) and warns if 
+   new failures appear in ADR after LIST FAILURE. Displays a manual checklist, 
+   lists a single repair option, and generates a repair script 
+
+ADVISE FAILURE;
+
+------------------------------Repair Failure-----------------------------------------
+
+-- Executes repair suggestions based on ADVISE FAILURE. Repair may take a 
+   long time and it might make something in the database unavailable.
+   Can only do one repair at a time and once completed, the failure is closed
+
+REPAIR FAILURE;
+
+-- Useful when there are multiple failures with multiple fixes. Allows you
+  to specify what option to REPAIR
+-- Note: # is a number assigned to a repair by ADVISE, not the failure number itself
+-- PREVIEW shows what will happen without doing it, NOPROMPT does the repair
+    without asking for a confirmation
+
+REPAIR FAILURE USING REPAIR OPTION # {PREVIEW|NOPROMPT};
+
+
+
+
+
+

@@ -1,0 +1,258 @@
+##################################################################################
+# DATABASE PARAMETERS
+#################################################################################
+
+--------------------------------- GET database Service name, SID, Hostname ------------------------------------
+
+---- Get the Database name (first 8 characters of the database SID) 
+
+1) SHOW PARAMETER db_name
+2) SELECT name FROM V$database;
+
+
+-- INSTANCE_NAME - 16 character limit name for database instance (AKA set of processes plus memory. In a single-instance database system, 
+				  the instance name is usually the same as the database name. the instance name is also the same as the database SID
+				  used in naming database service components, windows registry keys, and ORACLE_SID environment variable 
+-- SERVICE_NAME - Database service name (SAME as global database name ---> DBname.Domain)
+-- TERMINAL - An operating system identifier for the current session. This is often the client machine name.
+-- HOST - The host name of the client machine.
+-- IP_ADDRESS - The IP address of the client machine.
+-- SERVER_HOST - The host name of the server running the database instance.
+
+SELECT SYS_CONTEXT('USERENV','INSTANCE_NAME') FROM dual;
+SELECT SYS_CONTEXT('USERENV','SERVICE_NAME') FROM dual;
+SELECT SYS_CONTEXT('USERENV','TERMINAL') FROM dual;
+SELECT SYS_CONTEXT('USERENV','HOST') FROM dual;
+SELECT SYS_CONTEXT('USERENV','IP_ADDRESS') FROM dual;
+SELECT SYS_CONTEXT('USERENV','SERVER_HOST') FROM dual;
+SELECT SYS_CONTEXT('USERENV','ORACLE_HOME') FROM dual;
+
+###########################################################################################
+# CHANGE INITIALIZATION PARAMETERS
+###########################################################################################
+
+-- To change an initialization paramater (the default scope is both)
+
+ALTER SYSTEM SET parametername=value SCOPE=[SPFILE| MEMORY| BOTH];
+
+ALTER SYSTEM SET SERVICE_NAMES='ORA12.EDDYFINDT.COM' SCOPE=SPFILE;
+
+-- Reset an initialization parameter to the default 
+
+ALTER SYSTEM RESET parametername;
+
+---------------------------------- enable password file ----------------------------------
+EXCLUSIVE: The default value, this setting allows only one instance of one database to use the password file 
+SHARED: This setting allows multiple databases running on the same server to use the password file, but it cannot be modified 
+NONE: This setting causes Oracle Database to behave as if the password file does not exist 
+
+ALTER SYSTEM SET REMOTE_LOGIN_PASSWORDFILE=EXCLUSIVE
+
+############################################################################################
+# Configuring different Oracle Home Variables 
+############################################################################################
+
+-- Session-Level configuration (settings revert back after exiting the command line)
+-- if there are multiple oracle homes within the same host, you will need to configue the
+  Oracle environment by setting it up to connect to the correct Oracle home and bin path. The
+  bin folder contains the oracle command/binary files for running SQL*Plus, RMAN, expdp, impdp, etc
+  
+1) SET ORACLE_SID =DBNAME
+
+2) SET ORACLE_HOME='C:\App\Oracle\product\12.2.0\dbhome_1\'
+
+3) SET PATH=%ORACLE_HOME%/bin;%PATH%
+
+3) SET TNS_ADMIN='C:\App\Oracle\product\12.2.0\dbhome_1\network\admin'
+
+OPTION 2 - make ORACLE_SID, ORACLE_HOME variables persistent for all sessions (make permanent) in windows 
+
+You can set you default ORACLE_SID by creating an ORACLE_SID variable in system properties in windows
+	- search 'edit environment variables'
+	- click on 'New'
+	- set varible name to 'ORACLE_SID'
+	- set variable value to database name
+	
+ALTERNATIVE (Allows you to permanently set system variables)
+- Go to settings >> system >> About >> Advanced system settings >> Environment Variables
+
+OPTION 3 - make settings permanent using command line for USER ENVIRONMENT (Run as Administrator open new cmd session for changes to take effect) 
+
+-- permanently add a new path to user environment
+
+SETX PATH "C:\Program Files\PostgreSQL\17\bin;%PATH%"
+
+-- Set variable for user environment
+
+SETX ORACLE_SID ORA19C
+
+OPTION 4 - make settings permanent using command line for entrire system
+
+
+-- Set variable for entire system (In Windows Registry) by adding (/m) at end of command 
+
+SETX ORACLE_SID ORA19C /m
+
+SETX PATH "C:\Program Files\PostgreSQL\17\bin;%PATH%" /m
+
+
+###########################################################################################
+# CHANGE DB Domain name and Global Name 
+############################################################################################
+
+---- check to see if the database is using the spfile or not
+
+SELECT DECODE(value, NULL, 'PFILE', 'SPFILE') "Init File Type" 
+       FROM sys.v_$parameter WHERE name = 'spfile';
+
+-- See DB_DOMAIN
+SHO PARAMETER DB_DOMAIN
+
+-- See GLOBAL_NAME (GLOBAL_NAME is always DB_NAME.DB_DOMAIN)
+SELECT global_name FROM global_name
+
+STEP 1) Issue the following commands
+
+ALTER SYSTEM SET DB_DOMAIN='eddyfindt.com' SCOPE=SPFILE SID = '*';
+ALTER DATABASE rename GLOBAL_NAME to "ora19c22.eddyfindt.com";
+--------------------------------------------------------------------
+FOR PDB (the pdb global name will be set on the restart)
+ALTER SYSTEM SET DB_DOMAIN='eddyfindt.com' SCOPE=SPFILE SID = 'PDBName'
+-------------------------------------------------------------------------
+
+STEP 2) Restart the database (shutdown and startup)-
+
+The shutdown is necessary because the scope for the ALTER SYSTEM command was set to SPFILE. A restart is needed for the changes to be made to memory.
+use SCOPE=BOTH where you can to avoid having to restart the database
+
+-------------------Run a count of the objects owned by a user/schema-------------
+
+COL owner format a30
+
+SELECT owner, count(1), object_type 
+FROM dba_object
+WHERE owner = 'KNOWLEDGE'
+GROUP BY owner, object_type
+
+###################################################################################
+# ORACLE SERVICE PARAMETERS
+####################################################################################
+
+
+NOTES** make sure to run cmd prompt as administrator
+- You can confirm the Oracle database service settings in the registry editor in the following location
+
+HKEY_LOCAL_MACHINE\SOFTWARE\ORACLE\KEY_ORADB(version)HOME1
+
+https://docs.oracle.com/en/database/oracle/oracle-database/19/ntqrf/editing-an-instance-using-oradim.html
+
+-- Specify a new initialization parameter file for the instance prod, for example, enter:
+
+ORADIM -EDIT -SID prod -PFILE C:\app\username\product\12.2.0\admin\lynx\pfile\init.ora
+
+-- Delete oracle service TSH1 (shutdown the database first)
+
+ORADIM -DELETE -SID TSH1
+
+-- Create a new instance named prod
+https://docs.oracle.com/en/database/oracle/oracle-database/19/ntqrf/creating-an-instance-using-oradim.html
+
+C:\> ORADIM -NEW -SID prod -INTPWD password -STARTMODE auto -SRVCSTART system -PFILE C:\app\username\admin\prod\pfile\init.ora
+
+OPTIONS
+
+- SRVCSTART ---> 'system' automatically starts the Oracle database service on reboots
+- STARTMODE ----? 'auto' starts the instance when the Oracle database service has started
+- INTPWD/SYSPWD ---> sys user password (mininum 8 characters)
+
+###################################################################################
+# CHANGE DATABASE NAME, SID, SERVICE
+###################################################################################
+
+------------------------------------ ADD a new Oracle Database Service Name --------------------------
+
+------- STEP 1) View list of all database services 
+
+COL name FORMAT A30
+COL network_name FORMAT A30
+
+SELECT service_id, name, network_name FROM gv$active_services;
+
+-------STEP 2)
+
+ALTER SYSTEM SET SERVICE_NAMES='ServiceName' SCOPE=SPFILE;
+
+------------------------------------- DELETE an Oracle database service ---------------------------------
+
+-- You cannot stop or delete the default database service (the default service name is the same as the database name)
+
+------ STEP 1) Check to see if the service is still active (output are current active services)
+
+COL name FORMAT A30
+COL network_name FORMAT A30
+
+SELECT service_id, name, network_name FROM gv$active_services;
+
+------ STEP 3) Stop then delete the service (you can also start the service using START_SERVICE subprogram of DBMS_SERVICE package)
+
+EXEC DBMS_SERVICE.STOP_SERVICE(SERVICE_NAME => 'DeleteService.eddyfindt.com');
+
+EXEC DBMS_SERVICE.DELETE_SERVICE(SERVICE_NAME => 'DeleteService.eddyfindt.com'); 
+
+--------------------------------- ADD/RENAME new dispatcher service ------------------------
+
+---- STEP 1) Find dispatcher info
+
+SET LIN 120
+COL network FORMAT A40
+COL service FORMAT A16
+
+SELECT conf_indx, network, dispatchers, connections, service
+FROM v$dispatcher_config;
+
+---- STEP 2) YOu can add a new dispatcher service based on the previous dispatcher service
+
+ALTER SYSTEM set DISPATCHERS = '(PROTOCOL=TCP)(DISPATCHERS=1)(SESSIONS=1022)(SERVICE=ORA12CXDB)' SCOPE=both;
+
+-- STEP 3) Check if dispatcher service is still running
+
+COL name FORMAT A30
+COL network_name FORMAT A30
+
+SELECT service_id, name, network_name FROM gv$active_services;
+
+---------------------------- CHANGE DATBASE NAME AND SID ------------------------------
+
+oracle DB_NAME has an 8 character limit
+
+https://oracle-base.com/articles/9i/dbnewid#DBNAMEOnly
+
+STEP 1: Shutdown database and start it up in mount mode
+STEP 2: use DBNewId utility to set a new database name ONLY or both a new database name and dbid
+
+-- To change both DBID and DBNAME	
+	nid TARGET=sys/password@TSH1 DBNAME=TSH2
+	
+-- to change the DBNAME only
+	nid TARGET=sys/password@TSH2 DBNAME=TSH3 SETNAME=YES
+
+STEP 3: change the DB_NAME parameter in the initialization parameter file (in MOUNT mode)
+	STARTUP MOUNT
+	ALTER SYSTEM SET DB_NAME=TSH2 SCOPE=SPFILE;
+	
+STEP 4: change the password file name located in ----> ORACLE_HOME\database 
+orapwd file=c:\oracle\920\database\pwdTSH2.ora password=password entries=10
+
+STEP 5: rename the SPFILE to SPFILE(NEWDBNAME).ORA located in -----> ORACLE_HOME\database 
+STEP 6: In windows delete the Oracle service and recreate it with the new database name
+
+ORADIM -DELETESID -sid TSH1
+ORADIM -NEW -SID TSH2 -INTPWD password -SRVCSTART system -STARTMODE a -PFILE ORACLE_HOME\database\spfileTSH2.ora
+
+STEP 7: Alter the listener.ora and tnsnames.ora setting to match the new database name and restart the listener
+reload the listener if changes are made to the listener.ora file
+
+STEP 8: Open the database with RESETLOGS (ONLY if the DBID is changed)
+
+STARTUP MOUNT
+ALTER DATABASE OPEN RESETLOGS;

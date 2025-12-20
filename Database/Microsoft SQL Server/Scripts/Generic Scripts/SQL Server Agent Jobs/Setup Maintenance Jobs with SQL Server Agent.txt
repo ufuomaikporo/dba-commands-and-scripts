@@ -1,0 +1,21 @@
+STEP 1. Create necessary tables on the master server
+1. AgentJobEmailTracker - Tracks whether email has been sent about a completed job
+2. AgentJob - Stores information on SQL Server Agent jobs (Name, jobstatus, duration, etc)
+3. AgentJobsDetailProcedure - Stores info on names of stored procedure for getting more info on failed jobs
+4. DatabaseBackupInfo - Stores info on database backups 
+
+STEP 2) Create stored procedures on the master server for reporting on failed jobs
+1. sp_ReportFailedBackups - Generates report on failed backups
+2. sp_ReportFailedBckpRestore - Generate report on backups that failed restore test or failed backup
+
+STEP 3) Create stored procedures on each target server that will be executed by the agent job. 
+1. sp_BackupSQLServer - performs database backups
+2. sp_GatherAgentJobInfo - Sends report on agent jobs to master server
+3. sp_BackupRestoreTest - Performs backup restore test
+
+STEP 4) Create the SQL Server Agent Jobs on the master server
+1. SQL Server Database Backup - Agent Job to backup databases
+2. Backup Restore Testing - Agent job that performs backup restore tests
+3. Report SQL Server Agent Job Status - Agent job to send result of agent jobs to master server
+
+
