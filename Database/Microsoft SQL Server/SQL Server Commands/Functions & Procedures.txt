@@ -270,3 +270,24 @@ SELECT CAST(FLOOR(CAST(GETDATE() AS FLOAT)) AS DATETIME)
 -- Truncate date and add 1 minute to time (1 minute after midnight)
 
 SELECT CAST(FLOOR(CAST(GETDATE() AS FLOAT)) AS DATETIME) + 2.00001/1440
+
+
+########################################################################################################
+# ALREADY EXISTING STORED PROCEDURES
+########################################################################################################
+
+# The sp_MSforeachdb procedure allows you to run a command on each database on the server. In this instance
+# it's deleting the "test" user from each database on the server
+EXEC sp_MSforeachdb '
+    USE [?];
+    IF EXISTS (SELECT * FROM sys.database_principals WHERE name = ''test'')
+    BEGIN
+        DROP USER [test];
+        PRINT ''Dropped test from database: ?'';
+    END'
+	
+# If you have the dbatools module installed, you can use a single command to remove a user from every database on a server. 
+# This method is often preferred because it can handle complex dependencies like schema ownership automatically.
+
+Remove-DbaDbUser -SqlInstance "YourServerName" -User "USER_NAME_HERE"
+

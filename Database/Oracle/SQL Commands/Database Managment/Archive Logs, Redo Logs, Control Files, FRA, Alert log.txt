@@ -465,7 +465,7 @@ space_reclaimable: space that can be reclaimed by deleting obolete, redundant, a
          low priority files through space management algorithm
 number_of_files: number of files in FRA 
 
------------------------------------------- Clear space in FRA ----------------------------
+------------------------------------------ CLEAR SPACE IN FRA ----------------------------
 
 STEP 1) Physically Delete archivelog files from FRA
 

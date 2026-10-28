@@ -1,0 +1,34 @@
+﻿# The Active Directory PowerShell module (RSAT) is required can be installed via the following
+# powershell command (For Windows Server)
+
+# UNCOMMENT line below to install Active Directory PowerShell module (RSAT)
+#Install-WindowsFeature RSAT-AD-PowerShell
+
+# OR MANUALLY install (RSAT) in Windows Server
+# Go to Settings > Apps > Optional features and search for RSAT: Active Directory Domain Services.
+
+#---------- Register SPN for Multi-instance Node (DRASSQL2016)
+
+$Hostname = "DRASSQL2016"
+$ServiceUser = "DatabaseUser"
+
+# Register the FQDN for DRASSQL2016 and DRASSQL2016\LATIN1_GENERAL
+setspn -S MSSQLSvc/$Hostname.NDT.GLOBAL:1433 NDTG\$ServiceUser
+setspn -S MSSQLSvc/$Hostname.NDT.GLOBAL:50000 NDTG\$ServiceUser
+
+
+# Register the NetBIOS name for DRASSQL2016 and DRASSQL2016\LATIN1_GENERAL
+setspn -S MSSQLSvc/DRASSQL2016:1433 NDTG\$ServiceUser
+setspn -S MSSQLSvc/DRASSQL2016:50000 NDTG\$ServiceUser
+
+#------------------------- Grant delegation permission ------------------
+
+# 1. Identify the SQL Server service account (NDTG\DatabaseUser)
+$ServiceAccount  = Get-ADUser -Identity "$ServiceUser"
+
+# 3. Grant permission for the service account to delegate to itself
+Set-ADUser -Identity $ServiceAccount  -PrincipalsAllowedToDelegateToAccount $ServiceAccount 
+
+#---------------------------------- Verify -------------------------
+
+Get-ADServiceAccount -Identity $ServiceAccount -Properties PrincipalsAllowedToDelegateToAccount

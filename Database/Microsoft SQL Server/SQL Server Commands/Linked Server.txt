@@ -1,3 +1,24 @@
+##########################################################################################
+# SETUP
+##########################################################################################
+
+Install latest version of OLE DB Driver (they are backwards compatible)
+
+If Microsoft OLE DB Driver 19 for SQL Server is installed use the following connection string
+- to use Integrated security (connect using current user security context)
+- enable SSL encryption and trust SSL server certificate 
+- You will need to go to the "Security" page (left panel) and select "Be made using the login's current security context"
+
+Server=DRASSQL2019;Integrated Security=SSPI;Encrypt=Mandatory;TrustServerCertificate=yes;
+
+
+------------------- Check Linked Server Provider ----------------------------------
+
+SELECT name, provider, product, data_source
+FROM sys.servers
+WHERE is_linked = 1;
+
+
 #######################################################################################
 # QUERY A LINKED SERVER
 #######################################################################################
@@ -111,6 +132,32 @@ EXECUTE ('USE DBName
 
 ----------- EXAMPLE 1
 
+This allows you to perform joins against the remote server and set columns in the remote server equal to the local server
+
+SET @SQL = 'UPDATE tgt
+			SET LastBackupStartDate = CASE WHEN tab2.BackupStartDate IS NULL THEN GETDATE()  
+				 ELSE tab2.BackupStartDate  
+				END,  
+			LastBackupFinishDate = tab2.BackupFinishDate,  
+			LastBackupType = CASE WHEN tab2.BackupType = 1 OR tab2.BackupType IS NULL THEN ''Database Full''  
+							   WHEN tab2.BackupType = 5 THEN ''Database Differential''  
+							   ELSE tab2.BackupTypeDescription  
+							   END,  
+			FilePosition = CASE WHEN tab2.Position IS NULL THEN 1  
+						   ELSE tab2.Position  
+						   END,  
+			DaysSinceLastBackup = DATEDIFF(DAY, tab2.BackupStartDate, GETDATE()),  
+			LastBackupMessage = NULL  
+			FROM (SELECT * FROM OPENQUERY(' + QUOTENAME(@MasterServer) + ', ''SELECT * FROM DrasInternal.dbo.DatabaseBackupInfo'')) tgt
+			JOIN sys.databases AS tab1  
+			ON tgt.DatabaseName = tab1.name
+			AND tgt.ServerName = ''' + @@SERVERNAME + '''
+			LEFT JOIN (SELECT TOP 1 * FROM ##BackupSetInfo ORDER BY Position DESC)  tab2  
+			ON tab1.name = tab2.DatabaseName  
+			END'  
+
+----------- EXAMPLE 2
+
 NOTE**: 
 1. WHERE clause to filter rows affected by UPDATE statement MUST be placed in OPENQUERY SELECT statement
 2. Columns being modified by the UPDATE statement must be listed in OPENQUERY SELECT clause
@@ -134,7 +181,7 @@ SET LastBackupStartDate = 'Dec 18 2024 10:17PM',
 	LastBackupMessage = 'SUCCESSFUL'
 
 
------------ EXAMPLE 2)
+----------- EXAMPLE 3)
 -- Inline view (subquery in FROM clause) is created using a query from a remote server
 -- You can use sql functions either in the SELECT .. FROM OPENQUERY statement or in the SELECT statement inside the OPENQUERY function 
 -- 
@@ -157,7 +204,7 @@ SET @SQL = 'BEGIN TRANSACTION
 				AND TableName = ''' + @TableName + ''' AND ColumnName = ''' + @ColumnName + '''
 			COMMIT TRANSACTION'
 			
-------- EXAMPLE 2) You can use SELECT ...FROM OPENQUERY() WHERE... to to filter your query both on the local and remote servers
+------- EXAMPLE 4) You can use SELECT ...FROM OPENQUERY() WHERE... to to filter your query both on the local and remote servers
 
 SET @SQL = 'BEGIN TRANSACTION
 					INSERT INTO [DrasInternal].dbo.ListDomainTableInfo

@@ -1,4 +1,5 @@
 USE DrasInternal
+GO
 /*
 This stored procedure gathers information on completed SQL Server agent jobs and sends the info
 to the DrasInternal.dbo.AgentJob table
@@ -16,13 +17,7 @@ EXECUTE sp_GatherAgentJobInfo @MasterServer = 'DRASSQL2022'
 
 */
 
-IF OBJECT_ID('dbo.sp_GatherAgentJobInfo') IS NOT NULL
-BEGIN
-	DROP PROCEDURE [dbo].[sp_GatherAgentJobInfo]
-END
-GO
-
-CREATE PROCEDURE [dbo].[sp_GatherAgentJobInfo] @MasterServer NVARCHAR(100)
+CREATE OR ALTER PROCEDURE [dbo].[sp_GatherAgentJobInfo] @MasterServer NVARCHAR(100)
 AS
 BEGIN
 	DECLARE @SQL NVARCHAR(MAX)
@@ -36,7 +31,7 @@ BEGIN
 	END;
 
 	WITH CTE AS 
-	(SELECT ROW_NUMBER() OVER (PARTITION BY J.name, T.step_name ORDER BY msdb.dbo.agent_datetime(T.run_date, T.run_time) DESC) row_num,
+	(SELECT DISTINCT ROW_NUMBER() OVER (PARTITION BY J.name, T.step_name ORDER BY msdb.dbo.agent_datetime(T.run_date, T.run_time) DESC) row_num,
 			j.Job_Id AS JobId,
 			JobName = J.name,
 			@@SERVERNAME AS ServerName,
@@ -59,11 +54,12 @@ BEGIN
 	FROM msdb.dbo.sysjobhistory T
 	JOIN  msdb.dbo.sysjobs J
 	ON J.job_id = T.job_id  
-	JOIN msdb.dbo.sysjobsteps js
+	LEFT JOIN msdb.dbo.sysjobsteps js
 	ON T.job_id = js.job_id
-	JOIN (SELECT * FROM msdb.dbo.sysjobstepslogs ) AS jsl
+	LEFT JOIN (SELECT * FROM msdb.dbo.sysjobstepslogs ) AS jsl
 	ON js.step_uid = jsl.step_uid
-	)SELECT JobId,
+	WHERE j.owner_sid <> 0x01 
+	)SELECT DISTINCT JobId,
 			ServerName,
 			JobName,
 			JobInstanceId,
@@ -83,6 +79,8 @@ BEGIN
 	AND tab1.JobName NOT LIKE '%Report%Agent%Job%'
 	ORDER BY tab1.JobName, tab1.StepNumber
 
+
+	
  
 	IF (@MasterServer = @@SERVERNAME)
 	BEGIN
@@ -149,11 +147,14 @@ BEGIN
 		ON RTRIM(LTRIM(REPLACE(src.JobName, ''(Local)'', ''''))) = tgt.JobName
 		WHERE FORMAT(tgt.JobExecutionDate, ''yyyy-MM-dd HH:mm:00'') < FORMAT(src.StepExecutionDate, ''yyyy-MM-dd HH:mm:00'')'
 
+		EXECUTE (@SQL)
+
 	END
 	ELSE
 	BEGIN
 
-		SET @SQL = 'INSERT INTO ' + QUOTENAME(@MasterServer) + '.DrasInternal.dbo.AgentJob (JobId,
+		-- Perform insert into AgentJob table if an entry does not exist
+		SET @SQL = 'INSERT OPENQUERY(' + QUOTENAME(@MasterServer) + ', ''SELECT JobId,
 																				 JobName,
 																				 ServerName,
 																				 JobInstanceId,
@@ -166,7 +167,8 @@ BEGIN
 																				 LogSize,
 																				 LogCreateDate,
 																				 StepExecutionDate,
-																				 StepDuration)
+																				 StepDuration
+																		FROM DrasInternal.dbo.AgentJob'')
 						SELECT  JobId,
 								JobName,
 								ServerName,
@@ -182,53 +184,66 @@ BEGIN
 								StepExecutionDate,
 								StepDuration
 						FROM ##Temp_AgentJob src
-						WHERE NOT EXISTS (SELECT * FROM ' + QUOTENAME(@MasterServer) + '.DrasInternal.dbo.AgentJob tgt
-										WHERE tgt.JobId = src.JobId AND tgt.JobInstanceId = src.JobInstanceId 
-										AND tgt.ServerName = src.ServerName)
+						WHERE NOT EXISTS (SELECT * FROM OPENQUERY(' + QUOTENAME(@MasterServer) + ', ''SELECT * FROM DrasInternal.dbo.AgentJob'') tgt
+										WHERE tgt.JobId = src.JobId AND tgt.JobInstanceId = src.JobInstanceId
+										AND tgt.ServerName = src.ServerName COLLATE DATABASE_DEFAULT)'
 
-				UPDATE ' + QUOTENAME(@MasterServer) + '.DrasInternal.dbo.AgentJob 
-				SET StepNumber = src.StepNumber,
+				EXECUTE (@SQL)
+
+				-- Perform update on entry if it already exists
+				SET @SQL = 'UPDATE tgt				
+					SET StepNumber = src.StepNumber,
 				    StepName = src.StepName,
 				    StepStatus = src.StepStatus,
 				    Message = src.Message,
 				    LogId = src.LogId,
 				    LogMessage = src.LogMessage,
 				    LogSize = src.LogSize,
-				    LogCreateDate = src.LogCreateDate,
+				    LogCreateDate = CAST(src.LogCreateDate AS DATETIME2(3)),
 				    StepExecutionDate = src.StepExecutionDate,
 				    StepDuration = src.StepDuration
-				FROM ' + QUOTENAME(@MasterServer) + '.DrasInternal.dbo.AgentJob tgt
-				JOIN ##Temp_AgentJob src 
+				FROM (SELECT * FROM OPENQUERY(' + QUOTENAME(@MasterServer) + ', ''SELECT * FROM DrasInternal.dbo.AgentJob'')) tgt
+				JOIN ##Temp_AgentJob src
 				ON tgt.JobId = src.JobId AND tgt.JobInstanceId = src.JobInstanceId 
-				AND tgt.ServerName = src.ServerName
-				
-		DELETE FROM OPENQUERY(' + QUOTENAME(@MasterServer) + ', ''SELECT * FROM DrasInternal.dbo.AgentJob 
-														WHERE StepExecutionDate < DATEADD(MONTH, -6, GETDATE()) '')
+				AND tgt.ServerName = src.ServerName COLLATE DATABASE_DEFAULT
+				WHERE tgt.StepExecutionDate <> src.StepExecutionDate'
+
+		EXECUTE (@SQL)
+
+		-- Delete old entries from AgentJob (Older than 6 months)
+		SET @SQL = 'DELETE FROM OPENQUERY(' + QUOTENAME(@MasterServer) + ', ''SELECT * FROM DrasInternal.dbo.AgentJob 
+														WHERE StepExecutionDate < DATEADD(MONTH, -6, GETDATE()) '')'
 		
-		INSERT INTO ' + QUOTENAME(@MasterServer) + '.DrasInternal.dbo.AgentJobEmailTracker (JobName, JobExecutionDate, SentEmail, EmailDate)
+		EXECUTE (@SQL)
+
+		-- Insert or update the AgentJobEmailTracker table 
+		SET @SQL = 'INSERT INTO OPENQUERY(' + QUOTENAME(@MasterServer) + ', ''SELECT JobName, JobExecutionDate, SentEmail, EmailDate FROM DrasInternal.dbo.AgentJobEmailTracker'')
 		SELECT RTRIM(LTRIM(REPLACE(tmp.JobName, ''(Local)'', ''''))), StepExecutionDate, 0, NULL
 		FROM ##Temp_AgentJob tmp WHERE StepName LIKE ''%Job%Outcome%''
-		AND NOT EXISTS (SELECT * FROM ' + QUOTENAME(@MasterServer) + '.DrasInternal.dbo.AgentJobEmailTracker tgt
-							WHERE RTRIM(LTRIM(REPLACE(tmp.JobName, ''(Local)'', ''''))) = tgt.JobName)
-							
-		UPDATE ' + QUOTENAME(@MasterServer) + '.DrasInternal.dbo.AgentJobEmailTracker
+		AND NOT EXISTS (SELECT * FROM OPENQUERY(' + QUOTENAME(@MasterServer) + ', ''SELECT * FROM DrasInternal.dbo.AgentJobEmailTracker'') tgt
+							WHERE RTRIM(LTRIM(REPLACE(tmp.JobName, ''(Local)'', ''''))) = tgt.JobName COLLATE DATABASE_DEFAULT);
+			
+		UPDATE tgt
 		SET JobExecutionDate = FORMAT(src.StepExecutionDate, ''yyyy-MM-dd HH:mm:00''),
 			SentEmail = 0,
 			EmailDate = NULL
-		FROM ' + QUOTENAME(@MasterServer) + '.DrasInternal.dbo.AgentJobEmailTracker tgt
-		JOIN ##Temp_AgentJob src
-		ON RTRIM(LTRIM(REPLACE(src.JobName, ''(Local)'', ''''))) = tgt.JobName
-		WHERE FORMAT(tgt.JobExecutionDate, ''yyyy-MM-dd HH:mm:00'') < FORMAT(src.StepExecutionDate, ''yyyy-MM-dd HH:mm:00'')'
+		FROM ##Temp_AgentJob src
+		JOIN (SELECT * FROM OPENQUERY(' + QUOTENAME(@MasterServer) + ', ''SELECT * FROM DrasInternal.dbo.AgentJobEmailTracker'')) tgt
+		ON RTRIM(LTRIM(REPLACE(src.JobName, ''(Local)'', ''''))) = tgt.JobName COLLATE DATABASE_DEFAULT
+		WHERE FORMAT(tgt.JobExecutionDate, ''yyyy-MM-dd HH:mm:00'') < FORMAT(src.StepExecutionDate, ''yyyy-MM-dd HH:mm:00'') COLLATE DATABASE_DEFAULT
+		'
+
+		EXECUTE (@SQL)
 
 	END
-
-	EXECUTE (@SQL)
 	
 END
+GO
 
 /*
 
 EXEC sp_GatherAgentJobInfo @MasterServer = 'DRASSQL2022'
 
-
 */
+
+

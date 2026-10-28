@@ -1,14 +1,7 @@
 USE [DrasInternal]
 GO
 
-IF OBJECT_ID('sp_ReportFailedRestore') IS NOT NULL
-BEGIN
-	DROP PROCEDURE sp_ReportFailedRestore
-END
-GO
-
-
-CREATE PROCEDURE [dbo].[sp_ReportFailedRestore] @JobName NVARCHAR(500)
+CREATE OR ALTER PROCEDURE [dbo].[sp_ReportFailedRestore] @JobName NVARCHAR(500)
 AS
 BEGIN
 	
@@ -52,7 +45,8 @@ BEGIN
 	INTO FailedAgentJobs
 	FROM CTE WHERE rownum = 1
 	AND StepStatus NOT LIKE ''Succee%'' AND StepStatus <> ''Completed''
-	AND JobName = ''' + @JobName + '''';
+	AND JobName = ''' + @JobName + '''
+	AND ServerName IN (SELECT server_name FROM msdb.dbo.systargetservers)';
 
 	EXECUTE (@SQL)
 		

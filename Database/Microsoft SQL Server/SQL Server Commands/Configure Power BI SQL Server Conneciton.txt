@@ -1,0 +1,18 @@
+SETUP SQL Server Gateway for Power BI
+
+Download and Install Gateway
+
+https://learn.microsoft.com/en-us/data-integration/gateway/service-gateway-install 
+
+Go to:
+
+1. Click the "home" Or Power BI icon
+2. Click on "New Report" > Get Data > Search for "ODBC"
+3. Modify the server and database names in the connection string below and enter into connection string field
+	NOTE** make sure ODBC driver 18 is installed (can be change to ODBC driver 17 as well)
+
+Driver={ODBC Driver 18 for SQL Server};Server=DRASSQL2022;Database=DRAS_IRASv6_DEMO_QA;Encrypt=yes;TrustServerCertificate=yes;
+
+https://learn.microsoft.com/en-us/sql/connect/odbc/download-odbc-driver-for-sql-server?view=sql-server-ver17
+
+4. If you chose "Windows" authentication, you will need to enter you Domain/Username and password (windows user password)

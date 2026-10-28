@@ -13,8 +13,8 @@ USE master
 
 --**************************************************************************************************
 
-SET @Username = 'test' 
-SET @Password = 'test'
+SET @Username = 'NDTG\FMEFlowUser' 
+SET @Password = ''
 
 --Make sure to set this to make sure DDL_ADMIN role is not granted to the wrong user 
 SET @GrantDDLAdmin = 'N' --OR set to 'Y' to grant DDLADMIN role (DataExchangeUser needs this in both stage and link DB)
@@ -25,20 +25,8 @@ SET @GrantExecute = 'N' -- SET TO 'Y' to grant privilege to EXECUTE stored proce
 -- Set to 'Y' to give Read and Write permissions otherwise only Read permissions is given
 SET @GrantReadWrite = 'Y'  -- SET TO 'Y' to grant Read and Write privileges SET TO 'N' to grant Read-only (DataExchangeUser needs this in both stage and link DB)
 
--- If no database list is specifed the user will be added to all databases on the server
-SELECT @DBList = 'LGE_IRASV6_TIMP_UPDM_STAGE_TEST
-LGE_IRASv6_TIMP_UPDM_CONFIG
-LGE_IRASV6_TIMP_UPDM_LINK
-LGE_IRASV6_TIMP_UPDM_LINK_TEST
-LGE_IRASV6_TIMP_UPDM_STAGE
-LGE_IRASv6_TIMP_UPDM_CONFIG_TEST
-timp_config_test_DELME
-LGE_IRASv6_TIMP_UPDM_LINK_Nov_27
-LGE_IRASV6_TIMP_UPDM_LINK_FMETest
-LGE_IRASV6_TIMP_UPDM_STAGE_DELME
-LGE_IRASv6_TIMP_UPDM_CONFIG_Nov_27
-LGE_IRASv6_TIMP_UPDM_STAGE_Nov_27
-Base_IRASv6_STAGE'
+-- Must specify a value. Use 'ALL' to add to all databases
+SELECT @DBList = 'ALL'
 
 --select * from [DRASSQL2016\LATIN1_GENERAL].master.sys.databases
 
@@ -103,6 +91,10 @@ BEGIN
 	INSERT INTO #DBList
 	EXECUTE (@SQL)
 END
+
+
+
+print @SQL
 
 DECLARE UserList_Cur CURSOR FOR
 SELECT * FROM #GrantList
